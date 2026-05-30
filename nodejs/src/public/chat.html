@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 旅行规划助手</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  .chat-scroll::-webkit-scrollbar{width:4px}
+  .chat-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+  #input:focus{outline:none}
+  .typing::after{content:"▌";animation:blink 1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .plan-card{background:linear-gradient(135deg,#eff6ff,#f0fdf4);border:1px solid #bfdbfe;border-radius:12px;padding:16px;margin-top:12px}
+  .plan-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+  .cost-bar{height:8px;border-radius:4px;background:#e5e7eb;overflow:hidden}
+  .cost-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+  .msg-content p{margin-bottom:6px}
+  .msg-content ul,.msg-content ol{padding-left:20px;margin-bottom:6px}
+  .msg-content li{margin-bottom:2px}
+</style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col">
+
+<header class="bg-white border-b px-6 py-3 flex items-center gap-3 shrink-0">
+  <span class="text-2xl">✈️</span>
+  <div>
+    <h1 class="text-lg font-semibold text-gray-800">AI 旅行规划助手</h1>
+    <p class="text-xs text-gray-400">Multi-Agent · Tool Calling · SSE Streaming</p>
+  </div>
+</header>
+
+<main id="chat" class="flex-1 overflow-y-auto chat-scroll px-4 py-6 max-w-3xl mx-auto w-full space-y-4">
+  <div class="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed msg-content">
+    <p>你好！我是你的旅行规划助手。告诉我你想去哪里旅行，我会帮你规划完整的行程。</p>
+    <p>你可以告诉我：<b>目的地、预算、出发城市、出发和返回日期</b>，也可以补充旅行风格、人数和兴趣偏好。</p>
+  </div>
+</main>
+
+<footer class="bg-white border-t px-4 py-3 shrink-0">
+  <form id="form" class="max-w-3xl mx-auto flex gap-2">
+    <input id="input" type="text" placeholder="输入你的旅行需求..."
+      class="flex-1 border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white transition" autocomplete="off">
+    <button id="btn" type="submit"
+      class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+      发送
+    </button>
+  </form>
+</footer>
+
+<script>
+const chatEl = document.getElementById('chat');
+const formEl = document.getElementById('form');
+const inputEl = document.getElementById('input');
+const btnEl = document.getElementById('btn');
+
+let messages = [];
+let streaming = false;
+
+marked.setOptions({ breaks: true });
+
+function scrollBottom() {
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function addUserBubble(text) {
+  const div = document.createElement('div');
+  div.className = 'flex justify-end';
+  div.innerHTML = `<div class="bg-blue-100 rounded-2xl rounded-tr-sm px-4 py-3 max-w-[80%] text-sm text-gray-800">${esc(text)}</div>`;
+  chatEl.appendChild(div);
+  scrollBottom();
+}
+
+function createBotBubble() {
+  const wrap = document.createElement('div');
+  wrap.className = 'flex justify-start';
+  const bubble = document.createElement('div');
+  bubble.className = 'bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed msg-content typing';
+  wrap.appendChild(bubble);
+  chatEl.appendChild(wrap);
+  scrollBottom();
+  return bubble;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderPlanCard(plan) {
+  const pct = plan.budget > 0 ? Math.min((plan.totalCost / plan.budget) * 100, 100) : 0;
+  const barColor = plan.withinBudget ? 'bg-green-500' : 'bg-red-500';
+  const statusText = plan.withinBudget ? '预算内 ✓' : `超支 ¥${(plan.totalCost - plan.budget).toLocaleString()}`;
+
+  return `
+    <div class="plan-card">
+      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days}天行程</span></h3>
+      <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
+        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">机票</div><div class="font-bold text-blue-600">¥${plan.flightCost.toLocaleString()}</div></div>
+        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
+        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">活动</div><div class="font-bold text-purple-600">¥${plan.activityCost.toLocaleString()}</div></div>
+      </div>
+      <div class="flex items-center gap-2 text-xs mb-1">
+        <span class="font-semibold">总费用 ¥${plan.totalCost.toLocaleString()}</span>
+        <span class="text-gray-400">/</span>
+        <span class="text-gray-400">预算 ¥${plan.budget.toLocaleString()}</span>
+        <span class="ml-auto ${plan.withinBudget ? 'text-green-600' : 'text-red-600'} font-semibold">${statusText}</span>
+      </div>
+      <div class="cost-bar"><div class="cost-bar-fill ${barColor}" style="width:${pct}%"></div></div>
+      ${plan.hotelName ? `<div class="text-xs text-gray-500 mt-2">🏨 推荐酒店：${esc(plan.hotelName)}</div>` : ''}
+      ${plan.highlights?.length ? `<div class="text-xs text-gray-500 mt-1">🎯 亮点：${plan.highlights.map(h => esc(h)).join('、')}</div>` : ''}
+      ${plan.adjustmentRounds > 0 ? `<div class="text-xs text-amber-500 mt-1">⚠️ 经 ${plan.adjustmentRounds} 轮预算调整</div>` : ''}
+    </div>`;
+}
+
+function finalizeBotBubble(bubble, text, planData) {
+  bubble.classList.remove('typing');
+  bubble.innerHTML = marked.parse(text);
+  if (planData) {
+    bubble.innerHTML += renderPlanCard(planData);
+  }
+  scrollBottom();
+}
+
+async function sendMessage(text) {
+  if (streaming || !text.trim()) return;
+  streaming = true;
+  btnEl.disabled = true;
+
+  addUserBubble(text);
+  const botBubble = createBotBubble();
+
+  let fullText = '';
+  let planData = null;
+
+  try {
+    const resp = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, messages }),
+    });
+
+    if (!resp.ok) {
+      fullText = `请求失败: ${resp.status}`;
+      finalizeBotBubble(botBubble, fullText, null);
+      streaming = false;
+      btnEl.disabled = false;
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let currentEvent = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const raw = line.slice(6);
+          try {
+            const data = JSON.parse(raw);
+            if (currentEvent === 'text_delta') {
+              fullText += data.text;
+              botBubble.innerHTML = marked.parse(fullText);
+              scrollBottom();
+            } else if (currentEvent === 'tool_result') {
+              if (data.result && data.tool === 'plan_travel') {
+                planData = data.result;
+              }
+            } else if (currentEvent === 'error') {
+              fullText += `\n\n❌ 错误: ${data.error}`;
+            }
+          } catch {}
+          currentEvent = '';
+        }
+      }
+    }
+
+    finalizeBotBubble(botBubble, fullText, planData);
+
+    messages.push(
+      { role: 'user', content: text },
+      { role: 'assistant', content: [{ type: 'text', text: fullText }] },
+    );
+  } catch (err) {
+    fullText = fullText || '网络错误，请重试';
+    finalizeBotBubble(botBubble, fullText, null);
+  }
+
+  streaming = false;
+  btnEl.disabled = false;
+  inputEl.focus();
+}
+
+formEl.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = inputEl.value.trim();
+  inputEl.value = '';
+  sendMessage(text);
+});
+
+inputEl.focus();
+</script>
+</body>
+</html>

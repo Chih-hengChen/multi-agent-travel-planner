@@ -1,8 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import { TravelStyle, PlanRequestSchema, type PlanSummary, type UserPreferences } from "../types/index.js";
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
+import { handleChatStream } from "./stream-handler.js";
 
 export function registerRoutes(app: FastifyInstance) {
+  app.get("/", async (_request, reply) => {
+    return reply.redirect("/chat.html");
+  });
+
+  app.post("/api/chat/stream", async (request, reply) => {
+    const body = request.body as { message?: string };
+    if (!body?.message) {
+      return reply.status(400).send({ error: "message is required" });
+    }
+    await handleChatStream(request as any, reply);
+  });
+
   app.get("/api/health", async () => ({
     status: "ok",
     service: "travel-planner",
