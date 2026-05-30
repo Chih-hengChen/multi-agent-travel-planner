@@ -13,6 +13,10 @@ export class FlightAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const maxPrice = state.searchConstraints?.maxFlightPricePerPerson;
 
+    if (pref.transportPreference === "high_speed_rail" || pref.transportPreference === "train") {
+      return this.useTrainFallback(state, pref, dest);
+    }
+
     let outbound = await this.dataSource.searchFlights({
       origin: pref.departureCity,
       destination: dest.city,
@@ -82,5 +86,24 @@ export class FlightAgent extends BaseAgent {
     };
 
     return flights.reduce((best, f) => (score(f) > score(best) ? f : best));
+  }
+
+  private async useTrainFallback(state: TravelPlanState, pref: NonNullable<TravelPlanState["preferences"]>, dest: NonNullable<TravelPlanState["selectedDestination"]>): Promise<TravelPlanState> {
+    const trainsOut = estimateTrainPrice(pref.departureCity, dest.city);
+    const trainsRet = estimateTrainPrice(dest.city, pref.departureCity);
+    const cheapOut = trainsOut.length > 0 ? trainsOut.reduce((a, b) => (a.price < b.price ? a : b)) : null;
+    const cheapRet = trainsRet.length > 0 ? trainsRet.reduce((a, b) => (a.price < b.price ? a : b)) : null;
+
+    state.transportMode = "train";
+    state.trainOutbound = cheapOut;
+    state.trainReturn = cheapRet;
+    const total = ((cheapOut?.price ?? 0) + (cheapRet?.price ?? 0)) * pref.numTravelers;
+    state.flightResult = {
+      outboundFlights: [], returnFlights: [],
+      recommendedOutbound: null, recommendedReturn: null,
+      totalFlightCost: total,
+    };
+    this.log.info({ agent: this.name, mode: "train_pref", total }, "用户偏好火车，直接使用火车");
+    return state;
   }
 }

@@ -45,6 +45,25 @@ export const TOOLS: ToolDef[] = [
           items: { type: "string" },
           description: "兴趣标签，如：美食、博物馆、购物、自然风光",
         },
+        transport_preference: {
+          type: "string",
+          enum: ["flight", "high_speed_rail", "train", "no_preference"],
+          description: "交通偏好，默认 no_preference",
+        },
+        departure_time: {
+          type: "string",
+          enum: ["morning", "afternoon", "evening", "flexible"],
+          description: "偏好出发时间，默认 flexible",
+        },
+        budget_strictness: {
+          type: "string",
+          enum: ["strict", "flexible", "luxury"],
+          description: "预算严格程度，默认 strict",
+        },
+        special_requests: {
+          type: "string",
+          description: "特殊需求，如：必须去环球影城",
+        },
       },
       required: ["destination", "departure_city", "start_date", "end_date", "budget"],
     },
@@ -69,8 +88,12 @@ export async function executeTool(
     interests: Array.isArray(input.interests) ? input.interests.map(String) : [],
     dietaryRestrictions: [],
     accessibilityNeeds: [],
-    notes: "",
+    notes: String(input.special_requests ?? ""),
     preferredDestination: String(input.destination),
+    transportPreference: (input.transport_preference as UserPreferences["transportPreference"]) ?? "no_preference",
+    departureTime: (input.departure_time as UserPreferences["departureTime"]) ?? "flexible",
+    budgetStrictness: (input.budget_strictness as UserPreferences["budgetStrictness"]) ?? "strict",
+    specialRequests: input.special_requests ? String(input.special_requests) : undefined,
   };
 
   const log = pino({ level: "info" });

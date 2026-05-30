@@ -92,6 +92,9 @@ export async function quickPlan(opts: {
     dietaryRestrictions: [],
     accessibilityNeeds: [],
     notes: "",
+    transportPreference: "no_preference",
+    departureTime: "flexible",
+    budgetStrictness: "strict",
   };
   const pipeline = new TravelPlanningPipeline();
   return pipeline.run(prefs);

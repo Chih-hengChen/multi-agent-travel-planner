@@ -28,6 +28,9 @@ export async function runCli() {
     dietaryRestrictions: [],
     accessibilityNeeds: [],
     notes: "",
+    transportPreference: "no_preference",
+    departureTime: "flexible",
+    budgetStrictness: "strict",
   };
 
   const log = pino({ level: "warn" });

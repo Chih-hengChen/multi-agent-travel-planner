@@ -40,6 +40,10 @@ export function registerRoutes(app: FastifyInstance) {
       dietaryRestrictions: [],
       accessibilityNeeds: [],
       notes: req.notes,
+      transportPreference: req.transport_preference,
+      departureTime: req.departure_time,
+      budgetStrictness: req.budget_strictness,
+      specialRequests: req.special_requests,
     };
 
     const pipeline = new TravelPlanningPipeline();
@@ -86,6 +90,10 @@ export function registerRoutes(app: FastifyInstance) {
       dietaryRestrictions: [],
       accessibilityNeeds: [],
       notes: req.notes,
+      transportPreference: req.transport_preference,
+      departureTime: req.departure_time,
+      budgetStrictness: req.budget_strictness,
+      specialRequests: req.special_requests,
     };
 
     const pipeline = new TravelPlanningPipeline();

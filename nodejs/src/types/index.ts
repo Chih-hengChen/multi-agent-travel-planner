@@ -64,6 +64,10 @@ export const UserPreferencesSchema = z.object({
   accessibilityNeeds: z.array(z.string()).default([]),
   notes: z.string().default(""),
   preferredDestination: z.string().optional(),
+  transportPreference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  departureTime: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
+  budgetStrictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
+  specialRequests: z.string().optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
@@ -212,6 +216,10 @@ export const PlanRequestSchema = z.object({
   num_travelers: z.number().int().min(1).default(1),
   interests: z.array(z.string()).default([]),
   notes: z.string().default(""),
+  transport_preference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  departure_time: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
+  budget_strictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
+  special_requests: z.string().optional(),
 });
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 

@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import { PlanningState, type BudgetBreakdown, type SearchConstraints, type TravelPlanState } from "../types/index.js";
+import { PlanningState, type BudgetBreakdown, type SearchConstraints, type TravelPlanState, type UserPreferences } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
@@ -32,6 +32,10 @@ export class BudgetAgent extends BaseAgent {
     if (withinBudget) {
       state.state = PlanningState.COMPLETED;
       this.log.info({ agent: this.name, total, remaining }, "预算通过");
+    } else if (BudgetAgent.isWithinFlexBudget(pref, total) && pref.budgetStrictness !== "strict") {
+
+      state.state = PlanningState.COMPLETED;
+      this.log.info({ agent: this.name, total, remaining, strictness: pref.budgetStrictness }, "灵活预算，允许小幅超标");
     } else if (state.adjustmentRound < state.maxAdjustments) {
       state.state = PlanningState.ADJUSTING;
       state.adjustmentRound++;
@@ -49,6 +53,12 @@ export class BudgetAgent extends BaseAgent {
     }
 
     return state;
+  }
+
+  static isWithinFlexBudget(pref: UserPreferences, total: number): boolean {
+    const limits: Record<string, number> = { flexible: 1.15, luxury: 1.30 };
+    const ratio = limits[pref.budgetStrictness] ?? 1.0;
+    return total <= pref.budget * ratio;
   }
 
   static computeConstraints(state: TravelPlanState): SearchConstraints {
