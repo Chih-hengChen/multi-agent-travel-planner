@@ -1,0 +1,16 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+export const settings = Object.freeze({
+  LLM_PROVIDER: process.env.LLM_PROVIDER ?? "mock",
+  LLM_API_KEY: process.env.LLM_API_KEY ?? "",
+  LLM_BASE_URL: process.env.LLM_BASE_URL ?? "https://api.minimax.chat/v1",
+  LLM_MODEL: process.env.LLM_MODEL ?? "MiniMax-M2.7",
+  LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
+  LLM_MAX_TOKENS: parseInt(process.env.LLM_MAX_TOKENS ?? "4096", 10),
+  BUDGET_MAX_RETRIES: parseInt(process.env.BUDGET_MAX_RETRIES ?? "3", 10),
+  PARALLEL_TIMEOUT: parseInt(process.env.PARALLEL_TIMEOUT ?? "30", 10),
+  API_HOST: process.env.API_HOST ?? "0.0.0.0",
+  API_PORT: parseInt(process.env.API_PORT ?? "3000", 10),
+  LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
+});
