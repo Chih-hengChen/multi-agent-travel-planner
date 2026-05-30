@@ -9,6 +9,39 @@ export enum TravelStyle {
   RELAXATION = "relaxation",
 }
 
+export enum ActivitySubType {
+  ATTRACTION = "attraction",
+  DINING = "dining",
+  TRANSIT = "transit",
+}
+
+export const DINING_PRICE_BY_STYLE: Record<TravelStyle, { breakfast: number; lunch: number; dinner: number }> = {
+  [TravelStyle.BUDGET]: { breakfast: 15, lunch: 30, dinner: 35 },
+  [TravelStyle.COMFORT]: { breakfast: 30, lunch: 60, dinner: 80 },
+  [TravelStyle.LUXURY]: { breakfast: 100, lunch: 300, dinner: 500 },
+  [TravelStyle.ADVENTURE]: { breakfast: 20, lunch: 40, dinner: 50 },
+  [TravelStyle.CULTURAL]: { breakfast: 25, lunch: 50, dinner: 65 },
+  [TravelStyle.RELAXATION]: { breakfast: 40, lunch: 80, dinner: 120 },
+};
+
+export const TRANSIT_DAILY_COST: Record<TravelStyle, number> = {
+  [TravelStyle.BUDGET]: 20,
+  [TravelStyle.COMFORT]: 40,
+  [TravelStyle.LUXURY]: 100,
+  [TravelStyle.ADVENTURE]: 30,
+  [TravelStyle.CULTURAL]: 35,
+  [TravelStyle.RELAXATION]: 60,
+};
+
+export interface SearchConstraints {
+  maxFlightPricePerPerson?: number;
+  maxHotelPricePerNight?: number;
+  maxHotelStarRating?: number;
+  maxActivityCostPerDay?: number;
+  preferredCabinClass?: "economy" | "business";
+  allowTrainFallback?: boolean;
+}
+
 export enum PlanningState {
   COLLECTING_PREFERENCES = "collecting_preferences",
   RECOMMENDING_DESTINATIONS = "recommending_destinations",
@@ -105,8 +138,23 @@ export const ActivitySchema = z.object({
   rating: z.number().min(0).max(10).default(8.0),
   description: z.string().default(""),
   timeSlot: z.string().default(""),
+  subType: z.nativeEnum(ActivitySubType).optional(),
+  mealType: z.string().optional(),
 });
 export type Activity = z.infer<typeof ActivitySchema>;
+
+export const TrainSchema = z.object({
+  trainNo: z.string(),
+  trainType: z.string().default("高铁"),
+  departureCity: z.string(),
+  arrivalCity: z.string(),
+  departureTime: z.string(),
+  arrivalTime: z.string(),
+  price: z.number().nonnegative(),
+  durationHours: z.number().nonnegative(),
+  seatType: z.string().default("二等座"),
+});
+export type Train = z.infer<typeof TrainSchema>;
 
 export const DayPlanSchema = z.object({
   date: z.string(),
@@ -145,6 +193,10 @@ export class TravelPlanState {
   adjustmentRound = 0;
   maxAdjustments = 3;
   errorMessages: string[] = [];
+  searchConstraints: SearchConstraints | null = null;
+  transportMode: "flight" | "train" = "flight";
+  trainOutbound: Train | null = null;
+  trainReturn: Train | null = null;
 
   get selectedDestination(): Destination | null {
     return this.destinationRec?.selected ?? null;
@@ -177,4 +229,5 @@ export interface PlanSummary {
   days: number;
   highlights: string[];
   warnings: string[];
+  transportMode: "flight" | "train";
 }

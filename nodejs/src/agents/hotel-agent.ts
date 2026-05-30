@@ -1,5 +1,7 @@
 import type { Logger } from "pino";
 import type { Hotel, HotelSearchResult, TravelPlanState } from "../types/index.js";
+import { createRng } from "../utils/prng.js";
+import { computeSeed, agentSeed } from "../utils/seed.js";
 import { BaseAgent } from "./base-agent.js";
 
 const MOCK_HOTEL_TEMPLATES = [
@@ -16,12 +18,29 @@ export class HotelAgent extends BaseAgent {
   constructor(log: Logger) { super(log); }
 
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
-    const pref = state.preferences;
-    const dest = state.selectedDestination;
-    if (!pref || !dest) throw new Error("缺少偏好或目的地信息");
+    const pref = state.preferences!;
+    const dest = state.selectedDestination!;
+    const baseSeed = computeSeed(pref.departureCity, dest.city, pref.startDate, pref.endDate, pref.budget);
+    const seed = agentSeed(baseSeed, "hotel", state.adjustmentRound);
+    const rng = createRng(seed);
 
     const nights = HotelAgent.calcNights(pref.startDate, pref.endDate);
-    const hotels = HotelAgent.generateHotels(dest.city, pref.travelStyle);
+    let hotels = HotelAgent.generateHotels(dest.city, pref.travelStyle, rng);
+
+    const constraints = state.searchConstraints;
+    if (constraints) {
+      if (constraints.maxHotelPricePerNight) {
+        const cap = constraints.maxHotelPricePerNight;
+        const filtered = hotels.filter((h) => h.pricePerNight <= cap);
+        if (filtered.length > 0) hotels = filtered;
+        else hotels = hotels.filter((h) => h.pricePerNight <= cap * 1.1);
+      }
+      if (constraints.maxHotelStarRating) {
+        const filtered = hotels.filter((h) => h.starRating <= constraints.maxHotelStarRating!);
+        if (filtered.length > 0) hotels = filtered;
+      }
+    }
+
     const rec = HotelAgent.bestHotel(hotels, (pref.budget * 0.4) / Math.max(nights, 1), pref.travelStyle);
     const rooms = Math.max(1, Math.ceil(pref.numTravelers / 2));
     const total = rec ? rec.pricePerNight * nights * rooms : 0;
@@ -39,14 +58,14 @@ export class HotelAgent extends BaseAgent {
     } catch { return 3; }
   }
 
-  static generateHotels(city: string, style: string): Hotel[] {
+  static generateHotels(city: string, style: string, rng: { next: () => number }): Hotel[] {
     const priceMult: Record<string, number> = {
       budget: 0.6, comfort: 1.0, luxury: 1.8,
       adventure: 0.7, cultural: 0.9, relaxation: 1.3,
     };
     const mult = priceMult[style] ?? 1.0;
     return MOCK_HOTEL_TEMPLATES.map((t) => {
-      const noise = 0.8 + Math.random() * 0.4;
+      const noise = 0.8 + rng.next() * 0.4;
       return {
         name: `${city}${t.name}`,
         city,

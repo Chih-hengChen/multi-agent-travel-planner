@@ -63,6 +63,7 @@ export function registerRoutes(app: FastifyInstance) {
       days,
       highlights: dest?.highlights ?? [],
       warnings: state.errorMessages,
+      transportMode: state.transportMode,
     };
     return reply.send(summary);
   });
