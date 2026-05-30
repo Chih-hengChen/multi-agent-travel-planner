@@ -1,10 +1,11 @@
 import type { Logger } from "pino";
 import { PlanningState, type BudgetBreakdown, type SearchConstraints, type TravelPlanState } from "../types/index.js";
+import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
 export class BudgetAgent extends BaseAgent {
   readonly name = "BudgetAgent";
-  constructor(log: Logger) { super(log); }
+  constructor(log: Logger, dataSource: TravelDataSource) { super(log, dataSource); }
 
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
     const pref = state.preferences!;

@@ -1,15 +1,25 @@
 import type { Logger } from "pino";
 import type { TravelPlanState } from "../types/index.js";
+import type { TravelDataSource } from "../data-sources/types.js";
 import { settings } from "../config/settings.js";
+
+const NOOP_SOURCE: TravelDataSource = {
+  searchFlights: async () => [],
+  searchHotels: async () => [],
+  searchAttractions: async () => [],
+  searchTrains: async () => [],
+};
 
 export abstract class BaseAgent {
   abstract readonly name: string;
   protected readonly llmProvider: string;
   protected readonly log: Logger;
+  protected readonly dataSource: TravelDataSource;
 
-  constructor(log: Logger) {
+  constructor(log: Logger, dataSource?: TravelDataSource) {
     this.log = log;
     this.llmProvider = settings.LLM_PROVIDER;
+    this.dataSource = dataSource ?? NOOP_SOURCE;
   }
 
   async run(state: TravelPlanState): Promise<TravelPlanState> {

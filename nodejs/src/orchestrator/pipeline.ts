@@ -1,8 +1,35 @@
 import pino, { type Logger } from "pino";
 import { TravelStyle, TravelPlanState, PlanningState, type UserPreferences } from "../types/index.js";
 import { PreferenceAgent, DestinationAgent, FlightAgent, HotelAgent, ActivityAgent, BudgetAgent } from "../agents/index.js";
+import { AmadeusSource } from "../data-sources/amadeus-source.js";
+import { BookingSource } from "../data-sources/booking-source.js";
+import { AmapSource } from "../data-sources/amap-source.js";
+import { TrainDataSource } from "../data-sources/train-data.js";
+import type { TravelDataSource } from "../data-sources/types.js";
 import { ParallelExecutor } from "./parallel.js";
 import { BudgetLoopController } from "./budget-loop.js";
+
+class CompositeDataSource implements TravelDataSource {
+  constructor(
+    private readonly flights: TravelDataSource,
+    private readonly hotels: TravelDataSource,
+    private readonly attractions: TravelDataSource,
+    private readonly trains: TravelDataSource,
+  ) {}
+
+  searchFlights(params: Parameters<TravelDataSource["searchFlights"]>[0]) {
+    return this.flights.searchFlights(params);
+  }
+  searchHotels(params: Parameters<TravelDataSource["searchHotels"]>[0]) {
+    return this.hotels.searchHotels(params);
+  }
+  searchAttractions(params: Parameters<TravelDataSource["searchAttractions"]>[0]) {
+    return this.attractions.searchAttractions(params);
+  }
+  searchTrains(params: Parameters<TravelDataSource["searchTrains"]>[0]) {
+    return this.trains.searchTrains(params);
+  }
+}
 
 export class TravelPlanningPipeline {
   private readonly prefAgent: PreferenceAgent;
@@ -11,10 +38,17 @@ export class TravelPlanningPipeline {
 
   constructor(log?: Logger) {
     const logger: Logger = log ?? pino({ level: "info" });
-    const flightAgent = new FlightAgent(logger);
-    const hotelAgent = new HotelAgent(logger);
-    const activityAgent = new ActivityAgent(logger);
-    const budgetAgent = new BudgetAgent(logger);
+    const dataSource = new CompositeDataSource(
+      new AmadeusSource(),
+      new BookingSource(),
+      new AmapSource(),
+      new TrainDataSource(),
+    );
+
+    const flightAgent = new FlightAgent(logger, dataSource);
+    const hotelAgent = new HotelAgent(logger, dataSource);
+    const activityAgent = new ActivityAgent(logger, dataSource);
+    const budgetAgent = new BudgetAgent(logger, dataSource);
 
     this.prefAgent = new PreferenceAgent(logger);
     this.destAgent = new DestinationAgent(logger);
