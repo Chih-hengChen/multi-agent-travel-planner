@@ -19,28 +19,120 @@
   .msg-content p{margin-bottom:6px}
   .msg-content ul,.msg-content ol{padding-left:20px;margin-bottom:6px}
   .msg-content li{margin-bottom:2px}
+  .pref-panel{max-height:0;overflow:hidden;transition:max-height .4s ease}
+  .pref-panel.open{max-height:800px}
+  .chip{cursor:pointer;user-select:none;transition:all .15s}
+  .chip.selected{background:#3b82f6;color:#fff;border-color:#3b82f6}
+  .step-indicator .step-dot{width:8px;height:8px;border-radius:50%;background:#d1d5db;transition:all .2s}
+  .step-indicator .step-dot.active{background:#3b82f6;width:24px;border-radius:4px}
 </style>
 </head>
 <body class="bg-gray-50 h-screen flex flex-col">
 
 <header class="bg-white border-b px-6 py-3 flex items-center gap-3 shrink-0">
   <span class="text-2xl">✈️</span>
-  <div>
+  <div class="flex-1">
     <h1 class="text-lg font-semibold text-gray-800">AI 旅行规划助手</h1>
     <p class="text-xs text-gray-400">Multi-Agent · Tool Calling · SSE Streaming</p>
   </div>
+  <button id="prefToggle" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+    <span id="prefToggleIcon">▼</span> 偏好设置
+  </button>
 </header>
+
+<div id="prefPanel" class="pref-panel bg-white border-b">
+  <div class="max-w-3xl mx-auto px-4 py-4">
+    <div class="step-indicator flex gap-1.5 mb-4" id="stepIndicator">
+      <div class="step-dot active"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+      <div class="step-dot"></div>
+    </div>
+
+    <div id="step0" class="pref-step">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Step 1/5 · 基础信息</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">目的地</label>
+          <input id="p_dest" class="w-full border rounded-lg px-3 py-2 text-sm mt-1" placeholder="如：北京">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">出发城市</label>
+          <input id="p_from" class="w-full border rounded-lg px-3 py-2 text-sm mt-1" placeholder="如：上海">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">出发日期</label>
+          <input id="p_start" type="date" class="w-full border rounded-lg px-3 py-2 text-sm mt-1">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">返回日期</label>
+          <input id="p_end" type="date" class="w-full border rounded-lg px-3 py-2 text-sm mt-1">
+        </div>
+      </div>
+      <div class="mt-3">
+        <label class="text-xs text-gray-500">预算（元）：<span id="budgetVal" class="font-semibold text-blue-600">10000</span></label>
+        <input id="p_budget" type="range" min="2000" max="50000" step="1000" value="10000"
+          class="w-full mt-1 accent-blue-600">
+      </div>
+    </div>
+
+    <div id="step1" class="pref-step hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Step 2/5 · 交通偏好</h3>
+      <div class="flex gap-3 flex-wrap" id="transportGroup">
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex items-center gap-2" data-val="flight">✈️ 飞机</div>
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex items-center gap-2" data-val="high_speed_rail">🚄 高铁</div>
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex items-center gap-2" data-val="train">🚂 火车</div>
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex items-center gap-2 selected" data-val="no_preference">🤷 不限</div>
+      </div>
+    </div>
+
+    <div id="step2" class="pref-step hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Step 3/5 · 兴趣标签 <span class="text-xs text-gray-400 font-normal">（可多选）</span></h3>
+      <div class="flex gap-2 flex-wrap" id="interestGroup">
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="自然风光">🌿 自然风光</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="历史古迹">🏛️ 历史古迹</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="博物馆">🎭 博物馆</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="购物">🛍️ 购物</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="美食">🍜 美食</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="夜生活">🌙 夜生活</div>
+        <div class="chip border rounded-full px-4 py-2 text-sm" data-val="主题乐园">🎢 主题乐园</div>
+      </div>
+    </div>
+
+    <div id="step3" class="pref-step hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Step 4/5 · 预算态度</h3>
+      <div class="flex gap-3" id="budgetStrictGroup">
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex-1 text-center selected" data-val="strict">🔒 严格不超</div>
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex-1 text-center" data-val="flexible">🔧 可灵活</div>
+        <div class="chip border rounded-xl px-4 py-3 text-sm flex-1 text-center" data-val="luxury">💎 豪华不限</div>
+      </div>
+    </div>
+
+    <div id="step4" class="pref-step hidden">
+      <h3 class="text-sm font-semibold text-gray-700 mb-3">Step 5/5 · 特殊需求</h3>
+      <textarea id="p_special" class="w-full border rounded-lg px-3 py-2 text-sm h-20 resize-none"
+        placeholder="如：必须去环球影城、需要无障碍设施、带宠物…"></textarea>
+    </div>
+
+    <div class="flex justify-between mt-4">
+      <button id="prevStep" class="text-sm text-gray-500 hover:text-gray-700 hidden">← 上一步</button>
+      <div class="flex-1"></div>
+      <button id="nextStep" class="text-sm bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition">下一步 →</button>
+    </div>
+  </div>
+</div>
 
 <main id="chat" class="flex-1 overflow-y-auto chat-scroll px-4 py-6 max-w-3xl mx-auto w-full space-y-4">
   <div class="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed msg-content">
     <p>你好！我是你的旅行规划助手。告诉我你想去哪里旅行，我会帮你规划完整的行程。</p>
-    <p>你可以告诉我：<b>目的地、预算、出发城市、出发和返回日期</b>，也可以补充旅行风格、人数和兴趣偏好。</p>
+    <p>你可以点击上方<b>「偏好设置」</b>填写详细偏好，也可以直接在下方输入你的需求。</p>
   </div>
 </main>
 
 <footer class="bg-white border-t px-4 py-3 shrink-0">
   <form id="form" class="max-w-3xl mx-auto flex gap-2">
-    <input id="input" type="text" placeholder="输入你的旅行需求..."
+    <input id="input" type="text" placeholder="输入你的旅行需求，或填写偏好后点击「开始规划」..."
       class="flex-1 border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white transition" autocomplete="off">
     <button id="btn" type="submit"
       class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
@@ -54,15 +146,119 @@ const chatEl = document.getElementById('chat');
 const formEl = document.getElementById('form');
 const inputEl = document.getElementById('input');
 const btnEl = document.getElementById('btn');
+const prefToggle = document.getElementById('prefToggle');
+const prefPanel = document.getElementById('prefPanel');
+const prefToggleIcon = document.getElementById('prefToggleIcon');
 
 let messages = [];
 let streaming = false;
+let currentStep = 0;
+const TOTAL_STEPS = 5;
 
 marked.setOptions({ breaks: true });
 
-function scrollBottom() {
-  chatEl.scrollTop = chatEl.scrollHeight;
+prefToggle.addEventListener('click', () => {
+  prefPanel.classList.toggle('open');
+  prefToggleIcon.textContent = prefPanel.classList.contains('open') ? '▲' : '▼';
+});
+
+document.getElementById('p_budget').addEventListener('input', (e) => {
+  document.getElementById('budgetVal').textContent = parseInt(e.target.value).toLocaleString();
+});
+
+function setupChipGroup(containerId, multi) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (multi) {
+        chip.classList.toggle('selected');
+      } else {
+        container.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+      }
+    });
+  });
 }
+setupChipGroup('transportGroup', false);
+setupChipGroup('interestGroup', true);
+setupChipGroup('budgetStrictGroup', false);
+
+function showStep(n) {
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const el = document.getElementById('step' + i);
+    if (el) el.classList.toggle('hidden', i !== n);
+  }
+  document.querySelectorAll('.step-indicator .step-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === n);
+  });
+  document.getElementById('prevStep').classList.toggle('hidden', n === 0);
+  document.getElementById('nextStep').textContent = n === TOTAL_STEPS - 1 ? '🚀 开始规划' : '下一步 →';
+  currentStep = n;
+}
+
+document.getElementById('nextStep').addEventListener('click', () => {
+  if (currentStep < TOTAL_STEPS - 1) {
+    showStep(currentStep + 1);
+  } else {
+    submitPreferences();
+  }
+});
+
+document.getElementById('prevStep').addEventListener('click', () => {
+  if (currentStep > 0) showStep(currentStep - 1);
+});
+
+function getChipValue(groupId) {
+  const el = document.getElementById(groupId);
+  if (!el) return null;
+  const selected = el.querySelector('.chip.selected');
+  return selected ? selected.dataset.val : null;
+}
+
+function getChipValues(groupId) {
+  const el = document.getElementById(groupId);
+  if (!el) return [];
+  return Array.from(el.querySelectorAll('.chip.selected')).map(c => c.dataset.val);
+}
+
+function submitPreferences() {
+  const dest = document.getElementById('p_dest').value.trim();
+  const from = document.getElementById('p_from').value.trim();
+  const start = document.getElementById('p_start').value;
+  const end = document.getElementById('p_end').value;
+  const budget = parseInt(document.getElementById('p_budget').value);
+  const transport = getChipValue('transportGroup') || 'no_preference';
+  const interests = getChipValues('interestGroup');
+  const budgetStrict = getChipValue('budgetStrictGroup') || 'strict';
+  const special = document.getElementById('p_special').value.trim();
+
+  if (!dest || !from || !start || !end) {
+    alert('请填写目的地、出发城市和日期');
+    return;
+  }
+
+  prefPanel.classList.remove('open');
+  prefToggleIcon.textContent = '▼';
+
+  const parts = [`我想去${dest}旅行，从${from}出发，${start}到${end}，预算${budget}元`];
+  if (interests.length) parts.push(`兴趣：${interests.join('、')}`);
+  if (transport !== 'no_preference') {
+    const labels = { flight: '飞机', high_speed_rail: '高铁', train: '火车' };
+    parts.push(`交通偏好：${labels[transport]}`);
+  }
+  if (budgetStrict !== 'strict') {
+    const labels = { flexible: '预算可灵活', luxury: '豪华不限' };
+    parts.push(labels[budgetStrict]);
+  }
+  if (special) parts.push(`特殊需求：${special}`);
+
+  const text = parts.join('。');
+  inputEl.value = '';
+  sendMessage(text);
+}
+
+function scrollBottom() { chatEl.scrollTop = chatEl.scrollHeight; }
 
 function addUserBubble(text) {
   const div = document.createElement('div');
@@ -93,10 +289,11 @@ function renderPlanCard(plan) {
   const pct = plan.budget > 0 ? Math.min((plan.totalCost / plan.budget) * 100, 100) : 0;
   const barColor = plan.withinBudget ? 'bg-green-500' : 'bg-red-500';
   const statusText = plan.withinBudget ? '预算内 ✓' : `超支 ¥${(plan.totalCost - plan.budget).toLocaleString()}`;
+  const transportIcon = plan.transportMode === 'train' ? '🚄' : '✈️';
 
   return `
     <div class="plan-card">
-      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days}天行程</span></h3>
+      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days}天行程 · ${transportIcon}</span></h3>
       <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">机票</div><div class="font-bold text-blue-600">¥${plan.flightCost.toLocaleString()}</div></div>
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
@@ -118,9 +315,7 @@ function renderPlanCard(plan) {
 function finalizeBotBubble(bubble, text, planData) {
   bubble.classList.remove('typing');
   bubble.innerHTML = marked.parse(text);
-  if (planData) {
-    bubble.innerHTML += renderPlanCard(planData);
-  }
+  if (planData) bubble.innerHTML += renderPlanCard(planData);
   scrollBottom();
 }
 
@@ -175,9 +370,7 @@ async function sendMessage(text) {
               botBubble.innerHTML = marked.parse(fullText);
               scrollBottom();
             } else if (currentEvent === 'tool_result') {
-              if (data.result && data.tool === 'plan_travel') {
-                planData = data.result;
-              }
+              if (data.result && data.tool === 'plan_travel') planData = data.result;
             } else if (currentEvent === 'error') {
               fullText += `\n\n❌ 错误: ${data.error}`;
             }
@@ -188,7 +381,6 @@ async function sendMessage(text) {
     }
 
     finalizeBotBubble(botBubble, fullText, planData);
-
     messages.push(
       { role: 'user', content: text },
       { role: 'assistant', content: [{ type: 'text', text: fullText }] },
