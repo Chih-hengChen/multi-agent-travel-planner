@@ -30,6 +30,7 @@ export const UserPreferencesSchema = z.object({
   dietaryRestrictions: z.array(z.string()).default([]),
   accessibilityNeeds: z.array(z.string()).default([]),
   notes: z.string().default(""),
+  preferredDestination: z.string().optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 

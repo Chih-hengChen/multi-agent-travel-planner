@@ -1,7 +1,12 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
+import path from "path";
+import { fileURLToPath } from "url";
 import { settings } from "../config/settings.js";
 import { registerRoutes } from "./routes.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function createServer() {
   const app = Fastify({
@@ -14,6 +19,10 @@ export async function createServer() {
   });
 
   await app.register(cors, { origin: true });
+  await app.register(fastifyStatic, {
+    root: path.join(__dirname, "../public"),
+    prefix: "/",
+  });
   registerRoutes(app);
   return app;
 }

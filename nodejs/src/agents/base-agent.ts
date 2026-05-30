@@ -35,10 +35,45 @@ export abstract class BaseAgent {
   }
 
   private async realLlm(prompt: string, systemPrompt?: string): Promise<string> {
+    const isAnthropic = settings.LLM_PROVIDER === "anthropic";
     const messages: Array<{ role: string; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    if (!isAnthropic && systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
 
+    if (isAnthropic) {
+      return this.anthropicLlm(messages, systemPrompt);
+    }
+    return this.openaiLlm(messages);
+  }
+
+  private async anthropicLlm(
+    messages: Array<{ role: string; content: string }>,
+    systemPrompt?: string,
+  ): Promise<string> {
+    const body: Record<string, unknown> = {
+      model: settings.LLM_MODEL,
+      messages,
+      temperature: settings.LLM_TEMPERATURE,
+      max_tokens: settings.LLM_MAX_TOKENS,
+    };
+    if (systemPrompt) body.system = systemPrompt;
+
+    const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": settings.LLM_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const data = (await resp.json()) as { content: Array<{ type: string; text: string }>; error?: { message: string } };
+    if (data.error) throw new Error(`Anthropic API error: ${data.error.message}`);
+    return data.content[0].text;
+  }
+
+  private async openaiLlm(messages: Array<{ role: string; content: string }>): Promise<string> {
     const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
