@@ -1,6 +1,7 @@
 import { settings } from "../config/settings.js";
-import type { Activity, ActivitySubType, GeoLocation, TransitRouteResult, TransitSegment } from "../types/index.js";
-import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, TravelDataSource } from "./types.js";
+import type { Activity, GeoLocation, TransitRouteResult, TransitSegment } from "../types/index.js";
+import { ActivitySubType } from "../types/index.js";
+import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, RestaurantSearchParams, TravelDataSource } from "./types.js";
 
 const CATEGORY_MAP: Record<string, string> = {
   "自然风光": "自然风光|公园|植物园|风景区",
@@ -26,6 +27,24 @@ function buildKeywords(interests?: string[]): string {
   const mapped = interests.map((i) => CATEGORY_MAP[i] ?? i);
   return mapped.join("|");
 }
+
+const DINING_KEYWORDS: Record<string, Record<string, string>> = {
+  trending: {
+    breakfast: "网红早午餐|ins风咖啡厅|精品咖啡",
+    lunch: "网红餐厅|小红书推荐|博主探店",
+    dinner: "黑珍珠餐厅|必吃榜|热门餐厅|排队餐厅",
+  },
+  local_specialties: {
+    breakfast: "当地早餐|特色早点|老字号早餐",
+    lunch: "特色菜|地方菜|老字号",
+    dinner: "当地美食|特色正餐|地道菜",
+  },
+  mixed: {
+    breakfast: "早餐|早茶|咖啡厅",
+    lunch: "午餐|餐厅|美食",
+    dinner: "晚餐|正餐|美食街",
+  },
+};
 
 function parseGeoLocation(location?: string): GeoLocation | undefined {
   if (!location) return undefined;
@@ -106,6 +125,54 @@ export class AmapSource implements TravelDataSource {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[AmapSource] 景点搜索失败: ${msg}`);
+      return [];
+    }
+  }
+
+  async searchRestaurants(params: RestaurantSearchParams): Promise<Activity[]> {
+    try {
+      if (!settings.AMAP_API_KEY) throw new Error("AMAP_API_KEY 未配置");
+      const pref = params.diningPreference ?? "mixed";
+      const keywords = DINING_KEYWORDS[pref]?.[params.mealType] ?? "餐厅";
+      const maxResults = params.maxResults ?? 10;
+      const timeSlot = params.mealType === "breakfast" ? "morning" : params.mealType === "lunch" ? "afternoon" : "evening";
+      const durationHours = params.mealType === "breakfast" ? 1.0 : params.mealType === "lunch" ? 1.5 : 2.0;
+      const fallbackPrice = params.mealType === "breakfast" ? 30 : params.mealType === "lunch" ? 60 : 80;
+
+      const qs = new URLSearchParams({
+        key: settings.AMAP_API_KEY,
+        keywords,
+        types: "050000",
+        city: params.city,
+        citylimit: "true",
+        offset: String(Math.min(maxResults, 25)),
+        page: "1",
+        extensions: "all",
+      });
+
+      const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!resp.ok) throw new Error(`高德餐饮搜索失败 (${resp.status})`);
+      const data = await resp.json() as { status: string; pois: AmapPoi[]; info?: string };
+      if (data.status !== "1") throw new Error(`高德 API 错误: ${data.info ?? "unknown"}`);
+
+      return (data.pois ?? []).map((poi) => ({
+        name: poi.name,
+        category: "dining",
+        location: poi.address ?? params.city,
+        durationHours,
+        price: parseCost(poi.cost) || fallbackPrice,
+        rating: parseFloat(poi.rating ?? "0") / 2,
+        description: "",
+        timeSlot,
+        subType: ActivitySubType.DINING,
+        mealType: params.mealType,
+        geoLocation: parseGeoLocation(poi.location),
+      }) satisfies Activity);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[AmapSource] 餐饮搜索失败: ${msg}`);
       return [];
     }
   }

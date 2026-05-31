@@ -1,6 +1,6 @@
 import { settings } from "../config/settings.js";
 import type { Hotel } from "../types/index.js";
-import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, TravelDataSource } from "./types.js";
+import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, RestaurantSearchParams, TravelDataSource } from "./types.js";
 
 const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
   "北京": { lat: 39.9042, lon: 116.4074 },
@@ -119,6 +119,10 @@ export class BookingSource implements TravelDataSource {
   }
 
   async searchTrains(_params: TrainSearchParams): Promise<never[]> {
+    return [];
+  }
+
+  async searchRestaurants(_params: RestaurantSearchParams): Promise<never[]> {
     return [];
   }
 }

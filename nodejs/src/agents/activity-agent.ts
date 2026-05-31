@@ -20,13 +20,19 @@ export class ActivityAgent extends BaseAgent {
       maxResults: days.length * 3,
     });
 
+    const [breakfasts, lunches, dinners] = await Promise.all([
+      this.dataSource.searchRestaurants({ city: dest.city, mealType: "breakfast", diningPreference: pref.diningPreference as any, maxResults: days.length * 2 }),
+      this.dataSource.searchRestaurants({ city: dest.city, mealType: "lunch", diningPreference: pref.diningPreference as any, maxResults: days.length * 2 }),
+      this.dataSource.searchRestaurants({ city: dest.city, mealType: "dinner", diningPreference: pref.diningPreference as any, maxResults: days.length * 2 }),
+    ]);
+
     const maxPerDay = state.searchConstraints?.maxActivityCostPerDay;
     let totalCost = 0;
     const dayPlans: DayPlan[] = [];
 
     let attrIdx = 0;
     for (const dateStr of days) {
-      const plan = await this.planOneDay(dateStr, dest.city, pref, attractions, attrIdx);
+      const plan = await this.planOneDay(dateStr, dest.city, pref, attractions, attrIdx, breakfasts, lunches, dinners);
       if (maxPerDay) {
         let dayActivityCost = plan.activities.reduce((s, a) => s + a.price, 0);
         while (dayActivityCost > maxPerDay && plan.activities.length > 2) {
@@ -69,6 +75,9 @@ export class ActivityAgent extends BaseAgent {
     pref: UserPreferences,
     attractions: Activity[],
     startIdx: number,
+    breakfasts: Activity[],
+    lunches: Activity[],
+    dinners: Activity[],
   ): Promise<DayPlan> {
     const activities: Activity[] = [];
 
@@ -77,54 +86,69 @@ export class ActivityAgent extends BaseAgent {
       activities.push({ ...morningAttr, timeSlot: "morning", description: `${date} 上午 - ${morningAttr.name}` });
     }
 
-    activities.push({
-      name: "早餐",
-      category: "dining",
-      location: city,
-      durationHours: 1.0,
-      price: 30,
-      rating: 8.0,
-      description: `${date} 早餐`,
-      timeSlot: "morning",
-      subType: ActivitySubType.DINING,
-      mealType: "breakfast",
-    });
+    if (breakfasts.length > 0) {
+      const b = breakfasts[startIdx % breakfasts.length];
+      activities.push({ ...b, description: `${date} 早餐 - ${b.name}` });
+    } else {
+      activities.push({
+        name: "早餐",
+        category: "dining",
+        location: city,
+        durationHours: 1.0,
+        price: 30,
+        rating: 8.0,
+        description: `${date} 早餐`,
+        timeSlot: "morning",
+        subType: ActivitySubType.DINING,
+        mealType: "breakfast",
+      });
+    }
 
     const afternoonAttr = attractions[(startIdx + 1) % attractions.length];
     if (afternoonAttr) {
       activities.push({ ...afternoonAttr, timeSlot: "afternoon", description: `${date} 下午 - ${afternoonAttr.name}` });
     }
 
-    activities.push({
-      name: "午餐",
-      category: "dining",
-      location: city,
-      durationHours: 1.5,
-      price: 60,
-      rating: 8.0,
-      description: `${date} 午餐`,
-      timeSlot: "afternoon",
-      subType: ActivitySubType.DINING,
-      mealType: "lunch",
-    });
+    if (lunches.length > 0) {
+      const l = lunches[startIdx % lunches.length];
+      activities.push({ ...l, description: `${date} 午餐 - ${l.name}` });
+    } else {
+      activities.push({
+        name: "午餐",
+        category: "dining",
+        location: city,
+        durationHours: 1.5,
+        price: 60,
+        rating: 8.0,
+        description: `${date} 午餐`,
+        timeSlot: "afternoon",
+        subType: ActivitySubType.DINING,
+        mealType: "lunch",
+      });
+    }
 
     const eveningAttr = attractions[(startIdx + 2) % attractions.length];
     if (eveningAttr) {
       activities.push({ ...eveningAttr, timeSlot: "evening", description: `${date} 晚上 - ${eveningAttr.name}` });
     }
 
-    activities.push({
-      name: "晚餐",
-      category: "dining",
-      location: city,
-      durationHours: 2.0,
-      price: 80,
-      rating: 8.0,
-      description: `${date} 晚餐`,
-      timeSlot: "evening",
-      subType: ActivitySubType.DINING,
-      mealType: "dinner",
-    });
+    if (dinners.length > 0) {
+      const d = dinners[startIdx % dinners.length];
+      activities.push({ ...d, description: `${date} 晚餐 - ${d.name}` });
+    } else {
+      activities.push({
+        name: "晚餐",
+        category: "dining",
+        location: city,
+        durationHours: 2.0,
+        price: 80,
+        rating: 8.0,
+        description: `${date} 晚餐`,
+        timeSlot: "evening",
+        subType: ActivitySubType.DINING,
+        mealType: "dinner",
+      });
+    }
 
     const transitActivities = await this.buildTransitSegments(
       activities.filter((a) => a.geoLocation), city, date, FALLBACK_TRANSIT_COST, pref.localTransitMode,

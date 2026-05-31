@@ -29,10 +29,18 @@ export interface TrainSearchParams {
   date: string;
 }
 
+export interface RestaurantSearchParams {
+  city: string;
+  mealType: "breakfast" | "lunch" | "dinner";
+  diningPreference?: "trending" | "local_specialties" | "mixed";
+  maxResults?: number;
+}
+
 export interface TravelDataSource {
   searchFlights(params: FlightSearchParams): Promise<Flight[]>;
   searchHotels(params: HotelSearchParams): Promise<Hotel[]>;
   searchAttractions(params: AttractionSearchParams): Promise<Activity[]>;
   searchTrains(params: TrainSearchParams): Promise<Train[]>;
+  searchRestaurants(params: RestaurantSearchParams): Promise<Activity[]>;
   planTransitRoute?(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null>;
 }

@@ -8,6 +8,7 @@ const NOOP_SOURCE: TravelDataSource = {
   searchHotels: async () => [],
   searchAttractions: async () => [],
   searchTrains: async () => [],
+  searchRestaurants: async () => [],
 };
 
 export abstract class BaseAgent {

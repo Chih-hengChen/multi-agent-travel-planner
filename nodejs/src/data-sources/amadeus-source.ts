@@ -1,5 +1,5 @@
 import type { Flight } from "../types/index.js";
-import type { FlightSearchParams, TravelDataSource, HotelSearchParams, AttractionSearchParams, TrainSearchParams } from "./types.js";
+import type { FlightSearchParams, TravelDataSource, HotelSearchParams, AttractionSearchParams, TrainSearchParams, RestaurantSearchParams } from "./types.js";
 
 const CTRIP_CITY_MAP: Record<string, string> = {
   "北京": "BJS", "上海": "SHA", "广州": "CAN", "深圳": "SZX",
@@ -101,4 +101,5 @@ export class AmadeusSource implements TravelDataSource {
   async searchHotels(_params: HotelSearchParams): Promise<never[]> { return []; }
   async searchAttractions(_params: AttractionSearchParams): Promise<never[]> { return []; }
   async searchTrains(_params: TrainSearchParams): Promise<never[]> { return []; }
+  async searchRestaurants(_params: RestaurantSearchParams): Promise<never[]> { return []; }
 }
