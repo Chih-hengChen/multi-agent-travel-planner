@@ -13,6 +13,17 @@ export class FlightAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const maxPrice = state.searchConstraints?.maxFlightPricePerPerson;
 
+    if (pref.departureCity === dest.city) {
+      state.transportMode = "flight";
+      state.flightResult = {
+        outboundFlights: [], returnFlights: [],
+        recommendedOutbound: null, recommendedReturn: null,
+        totalFlightCost: 0,
+      };
+      this.log.info({ agent: this.name, reason: "same_city" }, "同城旅行，无需航班");
+      return state;
+    }
+
     if (pref.transportPreference === "high_speed_rail" || pref.transportPreference === "train") {
       return this.useTrainFallback(state, pref, dest);
     }
