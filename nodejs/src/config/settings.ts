@@ -13,4 +13,6 @@ export const settings = Object.freeze({
   API_HOST: process.env.API_HOST ?? "0.0.0.0",
   API_PORT: parseInt(process.env.API_PORT ?? "3000", 10),
   LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
+  RAPIDAPI_KEY: process.env.RAPIDAPI_KEY ?? "",
+  AMAP_API_KEY: process.env.AMAP_API_KEY ?? "",
 });
