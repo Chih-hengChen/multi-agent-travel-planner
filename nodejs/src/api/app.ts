@@ -3,8 +3,13 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 import { settings } from "../config/settings.js";
 import { registerRoutes } from "./routes.js";
+
+if (process.platform === "win32") {
+  try { execSync("chcp 65001", { stdio: "ignore" }); } catch {}
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -7,11 +7,11 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "dev:api": "tsx src/api/app.ts",
+    "dev": "chcp 65001 >nul 2>&1 & tsx src/index.ts",
+    "dev:api": "chcp 65001 >nul 2>&1 & tsx src/api/app.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "start:api": "node dist/api/app.js",
+    "start": "chcp 65001 >nul 2>&1 & node dist/index.js",
+    "start:api": "chcp 65001 >nul 2>&1 & node dist/api/app.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
