@@ -4,7 +4,6 @@ import { PreferenceAgent, DestinationAgent, FlightAgent, HotelAgent, ActivityAge
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
-import { TrainDataSource } from "../data-sources/train-data.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import type { GeoLocation, TransitRouteResult } from "../types/index.js";
 import { ParallelExecutor } from "./parallel.js";
@@ -45,11 +44,17 @@ export class TravelPlanningPipeline {
 
   constructor(log?: Logger) {
     const logger: Logger = log ?? pino({ level: "info", transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } } });
+    const noTrain: TravelDataSource = {
+      searchFlights: async () => [],
+      searchHotels: async () => [],
+      searchAttractions: async () => [],
+      searchTrains: async () => [],
+    };
     const dataSource = new CompositeDataSource(
       new AmadeusSource(),
       new BookingSource(),
       new AmapSource(),
-      new TrainDataSource(),
+      noTrain,
     );
 
     const flightAgent = new FlightAgent(logger, dataSource);

@@ -79,6 +79,7 @@
           <label class="text-xs text-gray-500">预算（元）<span class="required-star">*</span>：<span id="budgetVal" class="font-semibold text-blue-600">10,000</span></label>
           <input id="w_budget" type="range" min="2000" max="50000" step="1000" value="10000" class="w-full mt-1 accent-blue-600">
         </div>
+        <div id="sameCityError" class="hidden text-xs text-red-500 mt-1">⚠️ 出发城市和目的地不能相同</div>
       </div>
 
       <!-- Optional: Transport -->
@@ -226,13 +227,12 @@ const inputEl = document.getElementById('input');
 const btnEl = document.getElementById('btn');
 const modal = document.getElementById('wizardModal');
 
-let messages = [];
+let rawMessages = [];
 let streaming = false;
-let pendingMessage = '';
+let pendingToolUseId = null;
 
 marked.setOptions({ breaks: true });
 
-// --- Collapsible sections ---
 document.querySelectorAll('.collapsible-header').forEach(header => {
   header.addEventListener('click', () => {
     const target = document.getElementById(header.dataset.target);
@@ -240,7 +240,6 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
   });
 });
 
-// --- Chip groups ---
 function setupChipGroup(id, multi) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -262,30 +261,27 @@ setupChipGroup('wStarRating', false);
 setupChipGroup('wDiningPref', false);
 setupChipGroup('wInterestGroup', true);
 
-// --- Budget slider ---
 document.getElementById('w_budget').addEventListener('input', e => {
   document.getElementById('budgetVal').textContent = parseInt(e.target.value).toLocaleString();
   validateWizard();
 });
 
-// --- Validation ---
 function validateWizard() {
   const dest = document.getElementById('w_dest').value.trim();
   const from = document.getElementById('w_from').value.trim();
   const start = document.getElementById('w_start').value;
   const end = document.getElementById('w_end').value;
   const budget = parseInt(document.getElementById('w_budget').value);
-  document.getElementById('w_submit').disabled = !(dest && from && start && end && budget > 0);
+  const sameCity = dest && from && dest === from;
+  const errEl = document.getElementById('sameCityError');
+  if (errEl) errEl.classList.toggle('hidden', !sameCity);
+  document.getElementById('w_submit').disabled = !(dest && from && start && end && budget > 0 && !sameCity);
 }
 ['w_dest', 'w_from', 'w_start', 'w_end'].forEach(id => {
   document.getElementById(id).addEventListener('input', validateWizard);
   document.getElementById(id).addEventListener('change', validateWizard);
 });
 
-// --- Intent Detection ---
-const TRAVEL_INTENT_RE = /(?:我想去|要去|想去|规划|安排|准备去).*(?:旅游|旅行|玩|行程|度假|出去)|旅游|旅行|度假/;
-
-// --- Modal control ---
 function showWizardModal(destination) {
   if (destination) document.getElementById('w_dest').value = destination;
   const today = new Date();
@@ -299,18 +295,14 @@ function showWizardModal(destination) {
 
 function hideWizardModal() {
   modal.classList.add('hidden');
-  document.getElementById('w_from').value = '';
-  document.getElementById('w_dest').value = '';
 }
 
 document.getElementById('wizardClose').addEventListener('click', hideWizardModal);
 document.getElementById('w_skip').addEventListener('click', () => {
   hideWizardModal();
-  if (pendingMessage) sendMessage(pendingMessage);
-  pendingMessage = '';
+  pendingToolUseId = null;
 });
 
-// --- Helpers ---
 function getChipValue(groupId) {
   const el = document.getElementById(groupId);
   if (!el) return null;
@@ -357,202 +349,13 @@ function finalizeBotBubble(bubble, text, extraHtml) {
   scrollBottom();
 }
 
-// --- Plan rendering ---
-function renderFullPlan(state) {
-  const dest = state.destinationRec?.selected;
-  const bb = state.budgetBreakdown;
-  if (!bb) return '<p class="text-red-500">规划失败</p>';
-
-  const pct = bb.budget > 0 ? Math.min((bb.totalCost / bb.budget) * 100, 100) : 0;
-  const barColor = bb.isWithinBudget ? 'bg-green-500' : 'bg-red-500';
-  const statusText = bb.isWithinBudget ? '预算内 ✓' : `超支 ¥${(bb.totalCost - bb.budget).toLocaleString()}`;
-  const transportIcon = state.transportMode === 'train' ? '🚄' : '✈️';
-  const destCity = dest?.city ?? '';
-  const destCountry = dest?.country ?? '';
-
-  let html = `
-    <div class="plan-card">
-      <h3>📍 ${esc(destCity)}，${esc(destCountry)}　<span class="text-sm font-normal text-gray-500">${state.activityResult?.dayPlans?.length ?? 0}天行程 · ${transportIcon}</span></h3>
-      <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">机票</div><div class="font-bold text-blue-600">¥${bb.flightCost.toLocaleString()}</div></div>
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${bb.hotelCost.toLocaleString()}</div></div>
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">活动</div><div class="font-bold text-purple-600">¥${bb.activityCost.toLocaleString()}</div></div>
-      </div>
-      <div class="flex items-center gap-2 text-xs mb-1">
-        <span class="font-semibold">总计 ¥${bb.totalCost.toLocaleString()}</span>
-        <span class="text-gray-400">/</span>
-        <span class="text-gray-400">预算 ¥${bb.budget.toLocaleString()}</span>
-        <span class="ml-auto ${bb.isWithinBudget ? 'text-green-600' : 'text-red-600'} font-semibold">${statusText}</span>
-      </div>
-      <div class="cost-bar"><div class="cost-bar-fill ${barColor}" style="width:${pct}%"></div></div>`;
-
-  if (state.hotelResult?.recommended) {
-    html += `<div class="text-xs text-gray-500 mt-2">🏨 推荐酒店：${esc(state.hotelResult.recommended.name)} (${state.hotelResult.recommended.starRating}★)</div>`;
-  }
-  if (dest?.highlights?.length) {
-    html += `<div class="text-xs text-gray-500 mt-1">🎯 亮点：${dest.highlights.map(h => esc(h)).join('、')}</div>`;
-  }
-  if (state.adjustmentRound > 0) {
-    html += `<div class="text-xs text-amber-500 mt-1">⚠️ 经 ${state.adjustmentRound} 轮预算调整</div>`;
-  }
-  html += '</div>';
-
-  if (state.activityResult?.dayPlans?.length) {
-    for (const day of state.activityResult.dayPlans) {
-      html += `<div class="day-card"><h4>📅 ${day.date}</h4>`;
-      for (const act of day.activities) {
-        const icon = act.subType === 'transit' ? '🚗' : act.subType === 'dining' ? '🍽️' : '📍';
-        html += `<div class="act-item"><span>${icon} ${esc(act.name)}</span><span class="text-gray-500">¥${act.price}</span></div>`;
-      }
-      html += `<div class="text-right text-xs text-gray-400 mt-2">当日合计：¥${day.dayCost.toLocaleString()}</div></div>`;
-    }
-  }
-
-  return html;
-}
-
-// --- Wizard submit (direct API call) ---
-document.getElementById('w_submit').addEventListener('click', async () => {
-  const dest = document.getElementById('w_dest').value.trim();
-  const from = document.getElementById('w_from').value.trim();
-  if (!dest || !from) return;
-
-  const starVal = getChipValue('wStarRating');
-  const brands = document.getElementById('w_brands').value.trim();
-
-  const body = {
-    destination: dest,
-    departure_city: from,
-    start_date: document.getElementById('w_start').value,
-    end_date: document.getElementById('w_end').value,
-    budget: parseInt(document.getElementById('w_budget').value),
-    transport_preference: getChipValue('wTransportGroup') || 'no_preference',
-    departure_time: getChipValue('wDepartureTime') || 'flexible',
-    local_transit_mode: getChipValue('wLocalTransit') || 'mixed',
-    accommodation_type: getChipValue('wAccomType') || 'any',
-    preferred_star_rating: starVal && starVal !== '0' ? parseInt(starVal) : undefined,
-    preferred_hotel_brands: brands ? brands.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
-    dining_preference: getChipValue('wDiningPref') || 'mixed',
-    interests: getChipValues('wInterestGroup'),
-    notes: '',
-    budget_strictness: 'strict',
-  };
-
-  hideWizardModal();
-  addUserBubble(`规划去${dest}的旅行，从${from}出发，${body.start_date}到${body.end_date}，预算${body.budget.toLocaleString()}元`);
-  const botBubble = createBotBubble();
-  streaming = true;
-  btnEl.disabled = true;
-
-  try {
-    const resp = await fetch('/api/plan/full', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      finalizeBotBubble(botBubble, `❌ 规划失败: ${err.error || resp.status}`, null);
-      streaming = false; btnEl.disabled = false; return;
-    }
-
-    const state = await resp.json();
-    const destCity = state.destinationRec?.selected?.city ?? dest;
-    const summary = `已为您生成 **${destCity}** 的 ${body.start_date} ~ ${body.end_date} 行程方案，请查看下方详细规划。`;
-    const planHtml = renderFullPlan(state);
-    finalizeBotBubble(botBubble, summary, planHtml);
-  } catch (err) {
-    finalizeBotBubble(botBubble, '网络错误，请重试', null);
-  }
-
-  streaming = false;
-  btnEl.disabled = false;
-  inputEl.focus();
-});
-
-// --- Chat SSE (for non-travel messages) ---
-async function sendMessage(text) {
-  if (streaming || !text.trim()) return;
-  streaming = true;
-  btnEl.disabled = true;
-
-  addUserBubble(text);
-  const botBubble = createBotBubble();
-
-  let fullText = '';
-  let planData = null;
-
-  try {
-    const resp = await fetch('/api/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, messages }),
-    });
-
-    if (!resp.ok) {
-      fullText = `请求失败: ${resp.status}`;
-      finalizeBotBubble(botBubble, fullText, null);
-      streaming = false; btnEl.disabled = false; return;
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      let currentEvent = '';
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const raw = line.slice(6);
-          try {
-            const data = JSON.parse(raw);
-            if (currentEvent === 'text_delta') {
-              fullText += data.text;
-              botBubble.innerHTML = marked.parse(fullText);
-              scrollBottom();
-            } else if (currentEvent === 'tool_result') {
-              if (data.result && data.tool === 'plan_travel') planData = data.result;
-            } else if (currentEvent === 'error') {
-              fullText += `\n\n❌ 错误: ${data.error}`;
-            }
-          } catch {}
-          currentEvent = '';
-        }
-      }
-    }
-
-    const planCardHtml = planData ? renderPlanCard(planData) : '';
-    finalizeBotBubble(botBubble, fullText, planCardHtml);
-    messages.push(
-      { role: 'user', content: text },
-      { role: 'assistant', content: [{ type: 'text', text: fullText }] },
-    );
-  } catch (err) {
-    finalizeBotBubble(botBubble, fullText || '网络错误，请重试', null);
-  }
-
-  streaming = false;
-  btnEl.disabled = false;
-  inputEl.focus();
-}
-
 function renderPlanCard(plan) {
   const pct = plan.budget > 0 ? Math.min((plan.totalCost / plan.budget) * 100, 100) : 0;
   const barColor = plan.withinBudget ? 'bg-green-500' : 'bg-red-500';
   const statusText = plan.withinBudget ? '预算内 ✓' : `超支 ¥${(plan.totalCost - plan.budget).toLocaleString()}`;
-  return `
+  let html = `
     <div class="plan-card">
-      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}</h3>
+      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄' : '✈️'}</span></h3>
       <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">机票</div><div class="font-bold text-blue-600">¥${plan.flightCost.toLocaleString()}</div></div>
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
@@ -563,25 +366,179 @@ function renderPlanCard(plan) {
         <span class="text-gray-400">/ 预算 ¥${plan.budget.toLocaleString()}</span>
         <span class="ml-auto ${plan.withinBudget ? 'text-green-600' : 'text-red-600'} font-semibold">${statusText}</span>
       </div>
-      <div class="cost-bar"><div class="cost-bar-fill ${barColor}" style="width:${pct}%"></div></div>
-    </div>`;
+      <div class="cost-bar"><div class="cost-bar-fill ${barColor}" style="width:${pct}%"></div></div>`;
+  if (plan.hotelName) {
+    html += `<div class="text-xs text-gray-500 mt-2">🏨 推荐酒店：${esc(plan.hotelName)}</div>`;
+  }
+  if (plan.highlights?.length) {
+    html += `<div class="text-xs text-gray-500 mt-1">🎯 亮点：${plan.highlights.map(h => esc(h)).join('、')}</div>`;
+  }
+  if (plan.adjustmentRounds > 0) {
+    html += `<div class="text-xs text-amber-500 mt-1">⚠️ 经 ${plan.adjustmentRounds} 轮预算调整</div>`;
+  }
+  if (plan.warnings?.length) {
+    html += `<div class="text-xs text-amber-500 mt-1">⚠️ ${plan.warnings.join('；')}</div>`;
+  }
+  html += '</div>';
+  return html;
 }
 
-// --- Form submit: intent detection ---
+async function streamSSE(body, botBubble) {
+  let fullText = '';
+  let planData = null;
+  let needsInput = false;
+  let assistantContent = null;
+
+  const resp = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    finalizeBotBubble(botBubble, `❌ 请求失败: ${err.error || resp.status}`, null);
+    return { fullText, planData, needsInput, assistantContent };
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    let currentEvent = '';
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (currentEvent === 'text_delta') {
+            fullText += data.text;
+            botBubble.innerHTML = marked.parse(fullText);
+            scrollBottom();
+          } else if (currentEvent === 'assistant_message') {
+            assistantContent = data.content;
+          } else if (currentEvent === 'needs_input') {
+            needsInput = true;
+            pendingToolUseId = data.tool_use_id;
+            if (data.destination) {
+              document.getElementById('w_dest').value = data.destination;
+            }
+          } else if (currentEvent === 'tool_result') {
+            if (data.tool === 'plan_travel') planData = data.result;
+          } else if (currentEvent === 'error') {
+            fullText += `\n\n❌ 错误: ${data.error}`;
+          }
+        } catch {}
+        currentEvent = '';
+      }
+    }
+  }
+
+  const planCardHtml = planData ? renderPlanCard(planData) : '';
+  finalizeBotBubble(botBubble, fullText, planCardHtml);
+  return { fullText, planData, needsInput, assistantContent };
+}
+
+async function sendMessage(text) {
+  if (streaming || !text.trim()) return;
+  streaming = true;
+  btnEl.disabled = true;
+  addUserBubble(text);
+
+  const botBubble = createBotBubble();
+  try {
+    const result = await streamSSE({ message: text, messages: rawMessages }, botBubble);
+    rawMessages.push({ role: 'user', content: text });
+    if (result.assistantContent) {
+      rawMessages.push({ role: 'assistant', content: result.assistantContent });
+    }
+    if (result.needsInput) {
+      showWizardModal('');
+    }
+  } catch (err) {
+    finalizeBotBubble(botBubble, '网络错误，请重试', null);
+  }
+
+  streaming = false;
+  btnEl.disabled = false;
+  inputEl.focus();
+}
+
+document.getElementById('w_submit').addEventListener('click', async () => {
+  const dest = document.getElementById('w_dest').value.trim();
+  const from = document.getElementById('w_from').value.trim();
+  const start = document.getElementById('w_start').value;
+  const end = document.getElementById('w_end').value;
+  const budget = parseInt(document.getElementById('w_budget').value);
+  if (!dest || !from || !start || !end || !budget || !pendingToolUseId) return;
+
+  const starVal = getChipValue('wStarRating');
+  const brands = document.getElementById('w_brands').value.trim();
+
+  const toolResult = {
+    destination: dest,
+    departure_city: from,
+    start_date: start,
+    end_date: end,
+    budget: budget,
+    num_travelers: 1,
+    transport_preference: getChipValue('wTransportGroup') || 'no_preference',
+    departure_time: getChipValue('wDepartureTime') || 'flexible',
+    local_transit_mode: getChipValue('wLocalTransit') || 'mixed',
+    accommodation_type: getChipValue('wAccomType') || 'any',
+    preferred_star_rating: starVal && starVal !== '0' ? parseInt(starVal) : undefined,
+    preferred_hotel_brands: brands ? brands.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+    dining_preference: getChipValue('wDiningPref') || 'mixed',
+    interests: getChipValues('wInterestGroup'),
+    travel_style: 'comfort',
+    budget_strictness: 'strict',
+  };
+
+  rawMessages.push({
+    role: 'user',
+    content: [{
+      type: 'tool_result',
+      tool_use_id: pendingToolUseId,
+      content: JSON.stringify(toolResult),
+    }],
+  });
+
+  hideWizardModal();
+  addUserBubble(`去${dest}旅行，从${from}出发，${start} ~ ${end}，预算 ¥${budget.toLocaleString()}`);
+  pendingToolUseId = null;
+
+  const botBubble = createBotBubble();
+  streaming = true;
+  btnEl.disabled = true;
+
+  try {
+    const result = await streamSSE({ message: '', messages: rawMessages }, botBubble);
+    if (result.assistantContent) {
+      rawMessages.push({ role: 'assistant', content: result.assistantContent });
+    }
+  } catch (err) {
+    finalizeBotBubble(botBubble, '网络错误，请重试', null);
+  }
+
+  streaming = false;
+  btnEl.disabled = false;
+  inputEl.focus();
+});
+
 formEl.addEventListener('submit', e => {
   e.preventDefault();
   const text = inputEl.value.trim();
-  if (!text) return;
+  if (!text || streaming) return;
   inputEl.value = '';
-
-  if (TRAVEL_INTENT_RE.test(text)) {
-    pendingMessage = text;
-    const cityMatch = text.match(/(?:我想去|要去|想去|准备去|去)([一-龥]{2,4})(?:旅游|旅行|玩|度假|打卡|，|。|$)/);
-    const city = cityMatch ? cityMatch[1] : '';
-    showWizardModal(city);
-  } else {
-    sendMessage(text);
-  }
+  sendMessage(text);
 });
 
 inputEl.focus();

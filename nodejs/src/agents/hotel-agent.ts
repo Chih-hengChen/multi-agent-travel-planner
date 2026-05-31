@@ -22,7 +22,7 @@ export class HotelAgent extends BaseAgent {
     });
 
     if (hotels.length === 0) {
-      hotels = HotelAgent.fallbackHotels(dest.city, pref.travelStyle as TravelStyle);
+      this.log.warn({ agent: this.name, city: dest.city }, "未找到酒店");
     }
 
     const rec = HotelAgent.bestHotel(hotels, (pref.budget * 0.4) / Math.max(nights, 1), pref);
@@ -64,23 +64,5 @@ export class HotelAgent extends BaseAgent {
     };
 
     return hotels.reduce((best, h) => (score(h) > score(best) ? h : best));
-  }
-
-  static fallbackHotels(city: string, style: TravelStyle): Hotel[] {
-    const priceByStyle: Record<string, number> = {
-      budget: 200, comfort: 400, luxury: 1200,
-      adventure: 280, cultural: 350, relaxation: 600,
-    };
-    const starByStyle: Record<string, number> = {
-      budget: 2.5, comfort: 3.5, luxury: 4.5,
-      adventure: 3.0, cultural: 3.5, relaxation: 4.0,
-    };
-    const price = priceByStyle[style] ?? 400;
-    const star = starByStyle[style] ?? 3.5;
-    return [
-      { name: `${city}中心商务酒店`, city, address: `${city}市中心`, starRating: star, userRating: 8.2, pricePerNight: price, amenities: ["WiFi", "早餐", "停车场"], distanceToCenterKm: 0.5 },
-      { name: `${city}精品连锁酒店`, city, address: `${city}商业区`, starRating: Math.max(star - 0.5, 2), userRating: 7.8, pricePerNight: Math.round(price * 0.7), amenities: ["WiFi", "24小时前台"], distanceToCenterKm: 1.2 },
-      { name: `${city}高端精选酒店`, city, address: `${city}核心地段`, starRating: Math.min(star + 1, 5), userRating: 8.8, pricePerNight: Math.round(price * 1.6), amenities: ["WiFi", "早餐", "健身房", "泳池"], distanceToCenterKm: 0.3 },
-    ];
   }
 }

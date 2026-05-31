@@ -7,6 +7,25 @@ const log = pino({ level: "info", transport: { target: "pino-pretty", options: {
 
 export const TOOLS: ToolDef[] = [
   {
+    name: "collect_preferences",
+    description:
+      "当用户表达旅行意图时调用此工具。系统会弹出偏好表单让用户填写出发城市、日期、预算等信息。填写完成后返回完整旅行偏好数据。",
+    input_schema: {
+      type: "object",
+      properties: {
+        destination: {
+          type: "string",
+          description: "从用户消息中识别出的目的地城市名称",
+        },
+        message_to_user: {
+          type: "string",
+          description: "发给用户的确认消息，如'好的，让我帮您规划去北京的旅行'",
+        },
+      },
+      required: ["destination", "message_to_user"],
+    },
+  },
+  {
     name: "plan_travel",
     description:
       "根据用户旅行偏好生成完整行程方案，包括目的地推荐、航班、酒店、每日活动和预算分析。当用户提供了目的地、出发城市、出发/返回日期和预算信息后调用此工具。",
@@ -100,6 +119,14 @@ export async function executeTool(
   name: string,
   input: Record<string, unknown>,
 ): Promise<unknown> {
+  if (name === "collect_preferences") {
+    return {
+      status: "awaiting_input",
+      destination: input.destination,
+      message: input.message_to_user,
+    };
+  }
+
   if (name !== "plan_travel") {
     return { error: `Unknown tool: ${name}` };
   }

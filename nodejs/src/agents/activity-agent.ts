@@ -1,34 +1,9 @@
 import type { Logger } from "pino";
-import { TravelStyle, ActivitySubType, DINING_PRICE_BY_STYLE, TRANSIT_DAILY_COST, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState, type UserPreferences } from "../types/index.js";
+import { ActivitySubType, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState, type UserPreferences } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
-const DINING_TEMPLATES = [
-  { name: "当地特色早餐", mealType: "breakfast", durationHours: 1.0, rating: 8.0 },
-  { name: "街边小吃", mealType: "breakfast", durationHours: 0.5, rating: 7.5 },
-  { name: "特色午餐", mealType: "lunch", durationHours: 1.5, rating: 9.0 },
-  { name: "快餐简餐", mealType: "lunch", durationHours: 1.0, rating: 7.0 },
-  { name: "当地正餐", mealType: "dinner", durationHours: 2.0, rating: 9.0 },
-  { name: "夜市美食", mealType: "dinner", durationHours: 2.0, rating: 8.5 },
-  { name: "米其林餐厅体验", mealType: "dinner", durationHours: 2.5, rating: 9.5 },
-];
-
-const DINING_TEMPLATES_TRENDING = [
-  { name: "网红打卡早午餐", mealType: "breakfast", durationHours: 1.0, rating: 8.5 },
-  { name: "ins风咖啡厅", mealType: "breakfast", durationHours: 1.0, rating: 8.0 },
-  { name: "小红书推荐餐厅", mealType: "lunch", durationHours: 1.5, rating: 9.0 },
-  { name: "博主探店", mealType: "lunch", durationHours: 1.5, rating: 8.5 },
-  { name: "黑珍珠餐厅", mealType: "dinner", durationHours: 2.0, rating: 9.5 },
-  { name: "热门排队餐厅", mealType: "dinner", durationHours: 2.0, rating: 9.0 },
-  { name: "米其林必比登", mealType: "dinner", durationHours: 2.5, rating: 9.5 },
-];
-
-function diningPrice(mealType: string, style: TravelStyle): number {
-  const prices = DINING_PRICE_BY_STYLE[style];
-  return mealType === "breakfast" ? prices.breakfast
-    : mealType === "lunch" ? prices.lunch
-    : prices.dinner;
-}
+const FALLBACK_TRANSIT_COST = 40;
 
 export class ActivityAgent extends BaseAgent {
   readonly name = "ActivityAgent";
@@ -38,7 +13,6 @@ export class ActivityAgent extends BaseAgent {
     const pref = state.preferences!;
     const dest = state.selectedDestination!;
     const days = ActivityAgent.getTravelDays(pref.startDate, pref.endDate);
-    const transitCost = TRANSIT_DAILY_COST[pref.travelStyle as TravelStyle] ?? 40;
 
     const attractions = await this.dataSource.searchAttractions({
       city: dest.city,
@@ -52,7 +26,7 @@ export class ActivityAgent extends BaseAgent {
 
     let attrIdx = 0;
     for (const dateStr of days) {
-      const plan = await this.planOneDay(dateStr, dest.city, pref, attractions, attrIdx, transitCost);
+      const plan = await this.planOneDay(dateStr, dest.city, pref, attractions, attrIdx);
       if (maxPerDay) {
         let dayActivityCost = plan.activities.reduce((s, a) => s + a.price, 0);
         while (dayActivityCost > maxPerDay && plan.activities.length > 2) {
@@ -95,34 +69,65 @@ export class ActivityAgent extends BaseAgent {
     pref: UserPreferences,
     attractions: Activity[],
     startIdx: number,
-    fallbackTransitCost: number,
   ): Promise<DayPlan> {
     const activities: Activity[] = [];
-    const travelStyle = pref.travelStyle as TravelStyle;
 
     const morningAttr = attractions[(startIdx) % attractions.length];
     if (morningAttr) {
       activities.push({ ...morningAttr, timeSlot: "morning", description: `${date} 上午 - ${morningAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "breakfast", travelStyle, pref.diningPreference));
+    activities.push({
+      name: "早餐",
+      category: "dining",
+      location: city,
+      durationHours: 1.0,
+      price: 30,
+      rating: 8.0,
+      description: `${date} 早餐`,
+      timeSlot: "morning",
+      subType: ActivitySubType.DINING,
+      mealType: "breakfast",
+    });
 
     const afternoonAttr = attractions[(startIdx + 1) % attractions.length];
     if (afternoonAttr) {
       activities.push({ ...afternoonAttr, timeSlot: "afternoon", description: `${date} 下午 - ${afternoonAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "lunch", travelStyle, pref.diningPreference));
+    activities.push({
+      name: "午餐",
+      category: "dining",
+      location: city,
+      durationHours: 1.5,
+      price: 60,
+      rating: 8.0,
+      description: `${date} 午餐`,
+      timeSlot: "afternoon",
+      subType: ActivitySubType.DINING,
+      mealType: "lunch",
+    });
 
     const eveningAttr = attractions[(startIdx + 2) % attractions.length];
     if (eveningAttr) {
       activities.push({ ...eveningAttr, timeSlot: "evening", description: `${date} 晚上 - ${eveningAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "dinner", travelStyle, pref.diningPreference));
+    activities.push({
+      name: "晚餐",
+      category: "dining",
+      location: city,
+      durationHours: 2.0,
+      price: 80,
+      rating: 8.0,
+      description: `${date} 晚餐`,
+      timeSlot: "evening",
+      subType: ActivitySubType.DINING,
+      mealType: "dinner",
+    });
 
     const transitActivities = await this.buildTransitSegments(
-      activities.filter((a) => a.geoLocation), city, date, fallbackTransitCost, pref.localTransitMode,
+      activities.filter((a) => a.geoLocation), city, date, FALLBACK_TRANSIT_COST, pref.localTransitMode,
     );
     activities.push(...transitActivities);
 
@@ -132,7 +137,7 @@ export class ActivityAgent extends BaseAgent {
         category: "transit",
         location: city,
         durationHours: 1.0,
-        price: fallbackTransitCost,
+        price: FALLBACK_TRANSIT_COST,
         rating: 8.0,
         description: `${date} 市内交通`,
         timeSlot: "morning",
@@ -229,27 +234,4 @@ export class ActivityAgent extends BaseAgent {
 
     return transitActs;
   }
-}
-
-function makeDining(city: string, date: string, mealType: string, travelStyle: TravelStyle, diningPreference: string): Activity {
-  const isTrending = diningPreference === "trending";
-  const isLocal = diningPreference === "local_specialties";
-  const pool = isTrending ? DINING_TEMPLATES_TRENDING
-    : isLocal ? DINING_TEMPLATES
-    : [...DINING_TEMPLATES, ...DINING_TEMPLATES_TRENDING];
-  const candidates = pool.filter((d) => d.mealType === mealType);
-  const pick = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0]!;
-  const price = diningPrice(mealType, travelStyle);
-  return {
-    name: pick.name,
-    category: "dining",
-    location: city,
-    durationHours: pick.durationHours,
-    price,
-    rating: pick.rating,
-    description: `${date} ${mealType} - ${pick.name}`,
-    timeSlot: mealType === "breakfast" ? "morning" : mealType === "lunch" ? "afternoon" : "evening",
-    subType: ActivitySubType.DINING,
-    mealType,
-  };
 }

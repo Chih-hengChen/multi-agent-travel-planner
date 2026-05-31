@@ -15,24 +15,6 @@ export enum ActivitySubType {
   TRANSIT = "transit",
 }
 
-export const DINING_PRICE_BY_STYLE: Record<TravelStyle, { breakfast: number; lunch: number; dinner: number }> = {
-  [TravelStyle.BUDGET]: { breakfast: 15, lunch: 30, dinner: 35 },
-  [TravelStyle.COMFORT]: { breakfast: 30, lunch: 60, dinner: 80 },
-  [TravelStyle.LUXURY]: { breakfast: 100, lunch: 300, dinner: 500 },
-  [TravelStyle.ADVENTURE]: { breakfast: 20, lunch: 40, dinner: 50 },
-  [TravelStyle.CULTURAL]: { breakfast: 25, lunch: 50, dinner: 65 },
-  [TravelStyle.RELAXATION]: { breakfast: 40, lunch: 80, dinner: 120 },
-};
-
-export const TRANSIT_DAILY_COST: Record<TravelStyle, number> = {
-  [TravelStyle.BUDGET]: 20,
-  [TravelStyle.COMFORT]: 40,
-  [TravelStyle.LUXURY]: 100,
-  [TravelStyle.ADVENTURE]: 30,
-  [TravelStyle.CULTURAL]: 35,
-  [TravelStyle.RELAXATION]: 60,
-};
-
 export interface SearchConstraints {
   maxFlightPricePerPerson?: number;
   maxHotelPricePerNight?: number;

@@ -2,17 +2,19 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { streamChat, type Message, type ContentBlock } from "./llm-client.js";
 import { TOOLS, executeTool } from "./tools.js";
 
-const SYSTEM_PROMPT = `你是一个专业的旅行规划助手。与用户自然对话，了解旅行需求。
+const SYSTEM_PROMPT = `你是一个专业的旅行规划助手。
 
 规则：
 - 友好简洁，每次回复 2-3 句话
-- 当收集到目的地、出发城市、出发/返回日期和预算后，调用 plan_travel 工具生成行程
-- 收到工具返回的行程后，用生动的语言向用户介绍行程亮点
+- 当用户表达旅行意图时（如"我想去XX旅游"），立即调用 collect_preferences 工具
+- collect_preferences 会触发偏好收集表单，系统返回完整偏好数据
+- 收到偏好数据后，调用 plan_travel 工具生成行程方案
+- 收到行程结果后，用生动的语言向用户介绍行程亮点
 - 不要编造工具返回以外的信息
 - 用中文回复`;
 
 interface ChatStreamBody {
-  message: string;
+  message?: string;
   messages?: Message[];
 }
 
@@ -26,10 +28,10 @@ export async function handleChatStream(
 ): Promise<void> {
   const { message, messages: clientMessages = [] } = req.body;
 
-  const messages: Message[] = [
-    ...clientMessages,
-    { role: "user", content: message },
-  ];
+  const messages: Message[] = [...clientMessages];
+  if (message) {
+    messages.push({ role: "user", content: message });
+  }
 
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -63,6 +65,7 @@ async function runAgentLoop(
     );
 
     messages.push({ role: "assistant", content: assistantContent });
+    writeSSE(reply, "assistant_message", { content: assistantContent });
 
     const toolUseEvents = events.filter((e) => e.type === "tool_use");
     if (toolUseEvents.length === 0) break;
@@ -74,6 +77,14 @@ async function runAgentLoop(
         tool: toolEvent.name,
         input: toolEvent.input,
       });
+
+      if (toolEvent.name === "collect_preferences") {
+        writeSSE(reply, "needs_input", {
+          tool_use_id: toolEvent.id,
+          destination: toolEvent.input.destination ?? "",
+        });
+        return;
+      }
 
       const result = await executeTool(toolEvent.name, toolEvent.input);
 
