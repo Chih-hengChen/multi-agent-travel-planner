@@ -201,6 +201,10 @@ export async function executeTool(
     highlights: dest?.highlights ?? [],
     warnings: state.errorMessages,
     transportMode: state.transportMode,
+    outboundFlights: state.flightResult?.outboundFlights ?? [],
+    returnFlights: state.flightResult?.returnFlights ?? [],
+    hotels: state.hotelResult?.hotels ?? [],
+    dayPlans: state.activityResult?.dayPlans ?? [],
   };
 
   return result;

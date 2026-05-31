@@ -231,6 +231,10 @@ export interface PlanSummary {
   highlights: string[];
   warnings: string[];
   transportMode: "flight" | "train";
+  outboundFlights: Flight[];
+  returnFlights: Flight[];
+  hotels: Hotel[];
+  dayPlans: DayPlan[];
 }
 
 export interface GeoLocation {
