@@ -9,9 +9,9 @@ export function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/chat/stream", async (request, reply) => {
-    const body = request.body as { message?: string };
-    if (!body?.message) {
-      return reply.status(400).send({ error: "message is required" });
+    const body = request.body as { message?: string; messages?: unknown[] };
+    if (!body?.message && !body?.messages?.length) {
+      return reply.status(400).send({ error: "message or messages is required" });
     }
     await handleChatStream(request as any, reply);
   });
