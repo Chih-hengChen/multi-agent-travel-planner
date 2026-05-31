@@ -12,9 +12,7 @@ export async function createServer() {
   const app = Fastify({
     logger: {
       level: settings.LOG_LEVEL,
-      transport: settings.LOG_LEVEL === "debug"
-        ? { target: "pino-pretty" }
-        : undefined,
+      transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } },
     },
   });
 

@@ -44,7 +44,7 @@ export class TravelPlanningPipeline {
   private readonly budgetLoop: BudgetLoopController;
 
   constructor(log?: Logger) {
-    const logger: Logger = log ?? pino({ level: "info" });
+    const logger: Logger = log ?? pino({ level: "info", transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } } });
     const dataSource = new CompositeDataSource(
       new AmadeusSource(),
       new BookingSource(),

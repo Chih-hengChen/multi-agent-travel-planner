@@ -3,6 +3,8 @@ import { TravelStyle, type UserPreferences, type PlanSummary } from "../types/in
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
 import type { ToolDef } from "./llm-client.js";
 
+const log = pino({ level: "info", transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } } });
+
 export const TOOLS: ToolDef[] = [
   {
     name: "plan_travel",
@@ -96,7 +98,6 @@ export async function executeTool(
     specialRequests: input.special_requests ? String(input.special_requests) : undefined,
   };
 
-  const log = pino({ level: "info" });
   const pipeline = new TravelPlanningPipeline(log);
   const state = await pipeline.run(prefs);
 
