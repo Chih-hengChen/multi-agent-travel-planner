@@ -282,13 +282,32 @@ function validateWizard() {
   document.getElementById(id).addEventListener('change', validateWizard);
 });
 
-function showWizardModal(destination) {
-  if (destination) document.getElementById('w_dest').value = destination;
-  const today = new Date();
-  const start = new Date(today.getTime() + 7 * 86400000);
-  const end = new Date(today.getTime() + 12 * 86400000);
-  document.getElementById('w_start').value = start.toISOString().slice(0, 10);
-  document.getElementById('w_end').value = end.toISOString().slice(0, 10);
+function showWizardModal(prefill) {
+  if (prefill.destination) document.getElementById('w_dest').value = prefill.destination;
+  if (prefill.departure_city) document.getElementById('w_from').value = prefill.departure_city;
+
+  if (prefill.start_date) {
+    document.getElementById('w_start').value = prefill.start_date;
+  } else {
+    const today = new Date();
+    const start = new Date(today.getTime() + 7 * 86400000);
+    document.getElementById('w_start').value = start.toISOString().slice(0, 10);
+  }
+
+  if (prefill.end_date) {
+    document.getElementById('w_end').value = prefill.end_date;
+  } else {
+    const startVal = document.getElementById('w_start').value;
+    const base = startVal ? new Date(startVal) : new Date();
+    const end = new Date(base.getTime() + 4 * 86400000);
+    document.getElementById('w_end').value = end.toISOString().slice(0, 10);
+  }
+
+  if (prefill.budget && prefill.budget > 0) {
+    document.getElementById('w_budget').value = prefill.budget;
+    document.getElementById('budgetVal').textContent = prefill.budget.toLocaleString();
+  }
+
   validateWizard();
   modal.classList.remove('hidden');
 }
@@ -428,9 +447,7 @@ async function streamSSE(body, botBubble) {
           } else if (currentEvent === 'needs_input') {
             needsInput = true;
             pendingToolUseId = data.tool_use_id;
-            if (data.destination) {
-              document.getElementById('w_dest').value = data.destination;
-            }
+            showWizardModal(data);
           } else if (currentEvent === 'tool_result') {
             if (data.tool === 'plan_travel') planData = data.result;
           } else if (currentEvent === 'error') {
@@ -461,7 +478,7 @@ async function sendMessage(text) {
       rawMessages.push({ role: 'assistant', content: result.assistantContent });
     }
     if (result.needsInput) {
-      showWizardModal('');
+      // modal already shown via needs_input handler
     }
   } catch (err) {
     finalizeBotBubble(botBubble, '网络错误，请重试', null);

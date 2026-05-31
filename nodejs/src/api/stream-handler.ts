@@ -7,7 +7,7 @@ const SYSTEM_PROMPT = `你是一个专业的旅行规划助手。
 规则：
 - 友好简洁，每次回复 2-3 句话
 - 当用户表达旅行意图时（如"我想去XX旅游"），立即调用 collect_preferences 工具
-- collect_preferences 会触发偏好收集表单，系统返回完整偏好数据
+- 调用 collect_preferences 时，必须从用户消息中提取所有已知信息填入参数（destination、departure_city、start_date、end_date、budget、num_travelers），用户未提及的字段留空
 - 收到偏好数据后，调用 plan_travel 工具生成行程方案
 - 收到行程结果后，用生动的语言向用户介绍行程亮点
 - 不要编造工具返回以外的信息
@@ -79,9 +79,15 @@ async function runAgentLoop(
       });
 
       if (toolEvent.name === "collect_preferences") {
+        const r = await executeTool(toolEvent.name, toolEvent.input) as Record<string, unknown>;
         writeSSE(reply, "needs_input", {
           tool_use_id: toolEvent.id,
-          destination: toolEvent.input.destination ?? "",
+          destination: String(r.destination ?? ""),
+          departure_city: String(r.departure_city ?? ""),
+          start_date: String(r.start_date ?? ""),
+          end_date: String(r.end_date ?? ""),
+          budget: Number(r.budget) || 0,
+          num_travelers: Number(r.num_travelers) || 0,
         });
         return;
       }
