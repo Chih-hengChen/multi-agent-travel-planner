@@ -4,9 +4,9 @@ import { PreferenceAgent, DestinationAgent, FlightAgent, HotelAgent, ActivityAge
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
-import { Train12306Source } from "../data-sources/train-12306.js";
+import { WebSearchSource } from "../data-sources/web-search-source.js";
+import { FallbackDataSource } from "../data-sources/fallback-data-source.js";
 import type { TravelDataSource } from "../data-sources/types.js";
-import type { GeoLocation, TransitRouteResult } from "../types/index.js";
 import { ParallelExecutor } from "./parallel.js";
 import { BudgetLoopController } from "./budget-loop.js";
 
@@ -15,7 +15,6 @@ class CompositeDataSource implements TravelDataSource {
     private readonly flights: TravelDataSource,
     private readonly hotels: TravelDataSource,
     private readonly attractions: TravelDataSource,
-    private readonly trains: TravelDataSource,
   ) {}
 
   searchFlights(params: Parameters<TravelDataSource["searchFlights"]>[0]) {
@@ -28,16 +27,13 @@ class CompositeDataSource implements TravelDataSource {
     return this.attractions.searchAttractions(params);
   }
   searchTrains(params: Parameters<TravelDataSource["searchTrains"]>[0]) {
-    return this.trains.searchTrains(params);
+    return this.flights.searchTrains(params);
   }
   searchRestaurants(params: Parameters<TravelDataSource["searchRestaurants"]>[0]) {
     return this.attractions.searchRestaurants(params);
   }
-  async planTransitRoute(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null> {
-    if (this.attractions.planTransitRoute) {
-      return this.attractions.planTransitRoute(origin, destination, city);
-    }
-    return null;
+  planTransitRoute(origin: import("../types/index.js").GeoLocation, destination: import("../types/index.js").GeoLocation, city: string) {
+    return this.attractions.planTransitRoute?.(origin, destination, city) ?? Promise.resolve(null);
   }
 }
 
@@ -48,11 +44,11 @@ export class TravelPlanningPipeline {
 
   constructor(log?: Logger) {
     const logger: Logger = log ?? pino({ level: "info", transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } } });
+    const webSearch = new WebSearchSource(logger);
     const dataSource = new CompositeDataSource(
-      new AmadeusSource(),
-      new BookingSource(),
-      new AmapSource(),
-      new Train12306Source(logger),
+      new FallbackDataSource(new AmadeusSource(), webSearch, logger),
+      new FallbackDataSource(new BookingSource(), webSearch, logger),
+      new FallbackDataSource(new AmapSource(), webSearch, logger),
     );
 
     const flightAgent = new FlightAgent(logger, dataSource);
