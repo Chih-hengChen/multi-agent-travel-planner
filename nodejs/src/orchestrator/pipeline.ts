@@ -6,6 +6,7 @@ import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
 import { TrainDataSource } from "../data-sources/train-data.js";
 import type { TravelDataSource } from "../data-sources/types.js";
+import type { GeoLocation, TransitRouteResult } from "../types/index.js";
 import { ParallelExecutor } from "./parallel.js";
 import { BudgetLoopController } from "./budget-loop.js";
 
@@ -28,6 +29,12 @@ class CompositeDataSource implements TravelDataSource {
   }
   searchTrains(params: Parameters<TravelDataSource["searchTrains"]>[0]) {
     return this.trains.searchTrains(params);
+  }
+  async planTransitRoute(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null> {
+    if (this.attractions.planTransitRoute) {
+      return this.attractions.planTransitRoute(origin, destination, city);
+    }
+    return null;
   }
 }
 

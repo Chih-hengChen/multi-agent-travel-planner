@@ -144,6 +144,7 @@ export const ActivitySchema = z.object({
   timeSlot: z.string().default(""),
   subType: z.nativeEnum(ActivitySubType).optional(),
   mealType: z.string().optional(),
+  geoLocation: z.object({ lon: z.number(), lat: z.number() }).optional(),
 });
 export type Activity = z.infer<typeof ActivitySchema>;
 
@@ -238,4 +239,28 @@ export interface PlanSummary {
   highlights: string[];
   warnings: string[];
   transportMode: "flight" | "train";
+}
+
+export interface GeoLocation {
+  lon: number;
+  lat: number;
+}
+
+export interface TransitSegment {
+  type: "walking" | "bus" | "subway";
+  lineName?: string;
+  fromStop?: string;
+  toStop?: string;
+  distanceMeters: number;
+  durationMinutes: number;
+}
+
+export interface TransitRouteResult {
+  mode: "subway" | "bus" | "taxi" | "walk";
+  description: string;
+  cost: number;
+  durationMinutes: number;
+  walkingDistanceMeters: number;
+  transfers: number;
+  segments: TransitSegment[];
 }

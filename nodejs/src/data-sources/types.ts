@@ -1,4 +1,4 @@
-import type { Flight, Hotel, Activity, Train } from "../types/index.js";
+import type { Flight, Hotel, Activity, Train, GeoLocation, TransitRouteResult } from "../types/index.js";
 
 export interface FlightSearchParams {
   origin: string;
@@ -34,4 +34,5 @@ export interface TravelDataSource {
   searchHotels(params: HotelSearchParams): Promise<Hotel[]>;
   searchAttractions(params: AttractionSearchParams): Promise<Activity[]>;
   searchTrains(params: TrainSearchParams): Promise<Train[]>;
+  planTransitRoute?(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null>;
 }

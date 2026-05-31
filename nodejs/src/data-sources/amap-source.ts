@@ -1,5 +1,5 @@
 import { settings } from "../config/settings.js";
-import type { Activity, ActivitySubType } from "../types/index.js";
+import type { Activity, ActivitySubType, GeoLocation, TransitRouteResult, TransitSegment } from "../types/index.js";
 import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, TravelDataSource } from "./types.js";
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -12,10 +12,47 @@ const CATEGORY_MAP: Record<string, string> = {
   "主题乐园": "主题乐园|游乐园|水上乐园",
 };
 
+const AMAP_CITY_CODE: Record<string, string> = {
+  "北京": "010", "上海": "021", "广州": "020", "深圳": "0755",
+  "成都": "028", "杭州": "0571", "武汉": "027", "西安": "029",
+  "重庆": "023", "南京": "025", "长沙": "0731", "青岛": "0532",
+  "三亚": "0898", "厦门": "0592", "昆明": "0871", "天津": "022",
+  "哈尔滨": "0451", "大连": "0411", "南宁": "0771", "贵阳": "0851",
+  "桂林": "0773", "海口": "0898", "郑州": "0371", "福州": "0591",
+};
+
 function buildKeywords(interests?: string[]): string {
   if (!interests?.length) return "景点|旅游|公园";
   const mapped = interests.map((i) => CATEGORY_MAP[i] ?? i);
   return mapped.join("|");
+}
+
+function parseGeoLocation(location?: string): GeoLocation | undefined {
+  if (!location) return undefined;
+  const parts = location.split(",");
+  if (parts.length !== 2) return undefined;
+  const [lon, lat] = parts.map(Number);
+  if (isNaN(lon) || isNaN(lat)) return undefined;
+  return { lon, lat };
+}
+
+function parseCost(cost?: string): number {
+  if (!cost) return 0;
+  const nums = cost.match(/\d+/g);
+  if (!nums?.length) return 0;
+  return parseInt(nums[0]);
+}
+
+function buildTransitDescription(segments: TransitSegment[]): string {
+  const parts: string[] = [];
+  for (const seg of segments) {
+    if (seg.type === "walking" && seg.distanceMeters > 0) {
+      parts.push(`步行${seg.distanceMeters}m`);
+    } else if (seg.type === "subway" || seg.type === "bus") {
+      parts.push(`乘${seg.lineName ?? (seg.type === "subway" ? "地铁" : "公交")}`);
+    }
+  }
+  return parts.join("→") || "公共交通";
 }
 
 interface AmapPoi {
@@ -25,23 +62,16 @@ interface AmapPoi {
   location?: string;
   rating?: string;
   cost?: string;
-  photos?: string;
 }
 
 export class AmapSource implements TravelDataSource {
-  async searchFlights(_params: FlightSearchParams): Promise<never[]> {
-    return [];
-  }
-
-  async searchHotels(_params: HotelSearchParams): Promise<never[]> {
-    return [];
-  }
+  async searchFlights(_params: FlightSearchParams): Promise<never[]> { return []; }
+  async searchHotels(_params: HotelSearchParams): Promise<never[]> { return []; }
+  async searchTrains(_params: TrainSearchParams): Promise<never[]> { return []; }
 
   async searchAttractions(params: AttractionSearchParams): Promise<Activity[]> {
     try {
-      if (!settings.AMAP_API_KEY) {
-        throw new Error("AMAP_API_KEY 未配置");
-      }
+      if (!settings.AMAP_API_KEY) throw new Error("AMAP_API_KEY 未配置");
       const keywords = buildKeywords(params.interests);
       const maxResults = params.maxResults ?? 20;
       const qs = new URLSearchParams({
@@ -57,17 +87,9 @@ export class AmapSource implements TravelDataSource {
       const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
         signal: AbortSignal.timeout(15_000),
       });
-      if (!resp.ok) {
-        throw new Error(`高德 POI 搜索失败 (${resp.status})`);
-      }
-      const data = await resp.json() as {
-        status: string;
-        pois: AmapPoi[];
-        info?: string;
-      };
-      if (data.status !== "1") {
-        throw new Error(`高德 API 错误: ${data.info ?? "unknown"}`);
-      }
+      if (!resp.ok) throw new Error(`高德 POI 搜索失败 (${resp.status})`);
+      const data = await resp.json() as { status: string; pois: AmapPoi[]; info?: string };
+      if (data.status !== "1") throw new Error(`高德 API 错误: ${data.info ?? "unknown"}`);
 
       return (data.pois ?? []).map((poi) => ({
         name: poi.name,
@@ -79,6 +101,7 @@ export class AmapSource implements TravelDataSource {
         description: "",
         timeSlot: "",
         subType: "attraction" as ActivitySubType,
+        geoLocation: parseGeoLocation(poi.location),
       }) satisfies Activity);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -87,14 +110,122 @@ export class AmapSource implements TravelDataSource {
     }
   }
 
-  async searchTrains(_params: TrainSearchParams): Promise<never[]> {
-    return [];
+  async planTransitRoute(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null> {
+    try {
+      const transit = await this.fetchTransitRoute(origin, destination, city);
+      if (transit && transit.transfers <= 2 && transit.walkingDistanceMeters <= 1000) {
+        return transit;
+      }
+      const driving = await this.fetchDrivingRoute(origin, destination);
+      if (driving) return driving;
+      return transit;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[AmapSource] 路线规划失败: ${msg}`);
+      return null;
+    }
   }
-}
 
-function parseCost(cost?: string): number {
-  if (!cost) return 0;
-  const nums = cost.match(/\d+/g);
-  if (!nums?.length) return 0;
-  return parseInt(nums[0]);
+  private async fetchTransitRoute(origin: GeoLocation, destination: GeoLocation, city: string): Promise<TransitRouteResult | null> {
+    const cityCode = AMAP_CITY_CODE[city];
+    if (!cityCode) return null;
+
+    const qs = new URLSearchParams({
+      key: settings.AMAP_API_KEY,
+      origin: `${origin.lon},${origin.lat}`,
+      destination: `${destination.lon},${destination.lat}`,
+      city1: cityCode,
+      city2: cityCode,
+      strategy: "2",
+    });
+
+    const resp = await fetch(`https://restapi.amap.com/v5/direction/transit/integrated?${qs}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json() as any;
+    if (data.status !== "1" || !data.transits?.length) return null;
+
+    const plan = data.transits[0];
+    const cost = parseFloat(plan.cost?.transit_fee ?? "0") || 0;
+    const durationMin = Math.round(parseInt(plan.cost?.duration ?? "0") / 60) || 30;
+
+    let totalWalking = 0;
+    let rides = 0;
+    const segments: TransitSegment[] = [];
+
+    for (const seg of plan.segments ?? []) {
+      if (seg.walking) {
+        const walkDist = parseInt(seg.walking.distance ?? "0") || 0;
+        totalWalking += walkDist;
+        if (walkDist > 50) {
+          segments.push({ type: "walking", distanceMeters: walkDist, durationMinutes: Math.round(walkDist / 80) });
+        }
+      }
+      if (seg.bus?.buslines?.length) {
+        const line = seg.bus.buslines[0];
+        rides++;
+        segments.push({
+          type: "bus",
+          lineName: line.name?.split("(")[0] ?? "公交",
+          fromStop: line.departure_stop?.name,
+          toStop: line.arrival_stop?.name,
+          distanceMeters: parseInt(line.distance ?? "0") || 0,
+          durationMinutes: Math.round(parseInt(line.duration ?? "0") / 60) || 10,
+        });
+      }
+      if (seg.subway?.subwaylines?.length) {
+        const line = seg.subway.subwaylines[0];
+        rides++;
+        segments.push({
+          type: "subway",
+          lineName: line.name?.split("(")[0] ?? "地铁",
+          fromStop: line.departure_stop?.name,
+          toStop: line.arrival_stop?.name,
+          distanceMeters: parseInt(line.distance ?? "0") || 0,
+          durationMinutes: Math.round(parseInt(line.duration ?? "0") / 60) || 10,
+        });
+      }
+    }
+
+    return {
+      mode: segments.some((s) => s.type === "subway") ? "subway" : "bus",
+      description: buildTransitDescription(segments),
+      cost,
+      durationMinutes: durationMin,
+      walkingDistanceMeters: totalWalking,
+      transfers: Math.max(0, rides - 1),
+      segments,
+    };
+  }
+
+  private async fetchDrivingRoute(origin: GeoLocation, destination: GeoLocation): Promise<TransitRouteResult | null> {
+    const qs = new URLSearchParams({
+      key: settings.AMAP_API_KEY,
+      origin: `${origin.lon},${origin.lat}`,
+      destination: `${destination.lon},${destination.lat}`,
+      strategy: "32",
+    });
+
+    const resp = await fetch(`https://restapi.amap.com/v5/direction/driving?${qs}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json() as any;
+    if (data.status !== "1" || !data.route?.paths?.length) return null;
+
+    const path = data.route.paths[0];
+    const taxiCost = parseFloat(data.route.taxi_cost ?? "0") || parseFloat(path.cost?.taxi_fee ?? "0") || 0;
+    const durationMin = Math.round(parseInt(path.cost?.duration ?? "0") / 60) || 20;
+
+    return {
+      mode: "taxi",
+      description: `打车约¥${Math.round(taxiCost)}，${durationMin}分钟`,
+      cost: Math.round(taxiCost),
+      durationMinutes: durationMin,
+      walkingDistanceMeters: 0,
+      transfers: 0,
+      segments: [{ type: "bus", lineName: "出租车/网约车", distanceMeters: parseInt(path.distance ?? "0") || 0, durationMinutes: durationMin }],
+    };
+  }
 }

@@ -43,7 +43,7 @@ export class ActivityAgent extends BaseAgent {
 
     let attrIdx = 0;
     for (const dateStr of days) {
-      const plan = ActivityAgent.planOneDay(dateStr, dest.city, travelStyle, attractions, attrIdx, transitCost);
+      const plan = await this.planOneDay(dateStr, dest.city, travelStyle, attractions, attrIdx, transitCost);
       if (maxPerDay) {
         let dayActivityCost = plan.activities.reduce((s, a) => s + a.price, 0);
         while (dayActivityCost > maxPerDay && plan.activities.length > 2) {
@@ -80,14 +80,14 @@ export class ActivityAgent extends BaseAgent {
     } catch { return ["2026-01-01", "2026-01-02", "2026-01-03"]; }
   }
 
-  static planOneDay(
+  private async planOneDay(
     date: string,
     city: string,
     travelStyle: TravelStyle,
     attractions: Activity[],
     startIdx: number,
-    transitCost: number,
-  ): DayPlan {
+    fallbackTransitCost: number,
+  ): Promise<DayPlan> {
     const activities: Activity[] = [];
 
     const morningAttr = attractions[(startIdx) % attractions.length];
@@ -111,19 +111,76 @@ export class ActivityAgent extends BaseAgent {
 
     activities.push(makeDining(city, date, "dinner", travelStyle));
 
-    activities.push({
-      name: "市内交通",
-      category: "transit",
-      location: city,
-      durationHours: 1.0,
-      price: transitCost,
-      rating: 8.0,
-      description: `${date} 市内交通`,
-      timeSlot: "morning",
-      subType: ActivitySubType.TRANSIT,
-    });
+    const transitActivities = await this.buildTransitSegments(activities.filter((a) => a.geoLocation), city, date, fallbackTransitCost);
+    activities.push(...transitActivities);
+
+    if (transitActivities.length === 0) {
+      activities.push({
+        name: "市内交通",
+        category: "transit",
+        location: city,
+        durationHours: 1.0,
+        price: fallbackTransitCost,
+        rating: 8.0,
+        description: `${date} 市内交通`,
+        timeSlot: "morning",
+        subType: ActivitySubType.TRANSIT,
+      });
+    }
 
     return { date, activities, dayCost: 0 };
+  }
+
+  private async buildTransitSegments(
+    locatedActivities: Activity[],
+    city: string,
+    date: string,
+    fallbackCost: number,
+  ): Promise<Activity[]> {
+    if (locatedActivities.length < 2) return [];
+    if (!this.dataSource.planTransitRoute) return [];
+
+    const transitActs: Activity[] = [];
+
+    for (let i = 0; i < locatedActivities.length - 1; i++) {
+      const from = locatedActivities[i]!;
+      const to = locatedActivities[i + 1]!;
+      if (!from.geoLocation || !to.geoLocation) continue;
+
+      try {
+        const route = await this.dataSource.planTransitRoute(from.geoLocation, to.geoLocation, city);
+        if (route) {
+          transitActs.push({
+            name: route.mode === "taxi" ? "打车" : route.mode === "subway" ? "地铁出行" : "公交出行",
+            category: "transit",
+            location: city,
+            durationHours: Math.round(route.durationMinutes / 15) / 4,
+            price: route.cost,
+            rating: 8.0,
+            description: route.description,
+            timeSlot: from.timeSlot,
+            subType: ActivitySubType.TRANSIT,
+          });
+          continue;
+        }
+      } catch (err) {
+        this.log.warn({ err }, "路线规划失败，降级为固定成本");
+      }
+
+      transitActs.push({
+        name: "市内交通",
+        category: "transit",
+        location: city,
+        durationHours: 0.5,
+        price: Math.round(fallbackCost / 3),
+        rating: 8.0,
+        description: `${from.name} → ${to.name}`,
+        timeSlot: from.timeSlot,
+        subType: ActivitySubType.TRANSIT,
+      });
+    }
+
+    return transitActs;
   }
 }
 
