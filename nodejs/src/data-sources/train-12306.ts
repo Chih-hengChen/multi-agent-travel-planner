@@ -4,199 +4,134 @@ import type { Logger } from "pino";
 import type { TravelDataSource, TrainSearchParams, RestaurantSearchParams } from "./types.js";
 import type { Flight, Hotel, Activity, Train } from "../types/index.js";
 
-type JsonRpcRequest = {
-  jsonrpc: "2.0";
-  id: string;
-  method: string;
-  params?: Record<string, unknown>;
-};
-
-type JsonRpcNotification = {
-  jsonrpc: "2.0";
-  method: string;
-  params?: Record<string, unknown>;
-};
-
-type JsonRpcResponse = {
-  jsonrpc: "2.0";
-  id: string;
-  result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
-};
-
-type McpTool = {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-};
-
-const INIT_TIMEOUT_MS = 15_000;
+const MCP_PORT = 3100;
+const STARTUP_TIMEOUT_MS = 15_000;
 const TOOL_CALL_TIMEOUT_MS = 20_000;
 
 export class Train12306Source implements TravelDataSource {
-  private proc: ChildProcess | null = null;
-  private buf = "";
-  private pending = new Map<string, {
-    resolve: (value: JsonRpcResponse) => void;
-    reject: (err: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-  private ready = false;
-  private trainTools: McpTool[] = [];
-  private initPromise: Promise<void> | null = null;
+  private trainToolName: string | null = null;
+  private initialized = false;
 
   constructor(private readonly logger: Logger) {}
 
-  private ensureProcess(): Promise<void> {
-    if (this.initPromise) return this.initPromise;
-    this.initPromise = this.startAndInitialize();
-    return this.initPromise;
-  }
+  private async withMcpServer<T>(fn: () => Promise<T>): Promise<T> {
+    let proc: ChildProcess | null = null;
+    try {
+      proc = spawn("npx", ["-y", "12306-mcp", "--port", String(MCP_PORT)], {
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: true,
+        windowsHide: true,
+      });
 
-  private startAndInitialize(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      try {
-        this.proc = spawn("npx", ["-y", "12306-mcp"], {
-          stdio: ["pipe", "pipe", "pipe"],
-          shell: true,
-          windowsHide: true,
-        });
-      } catch (err) {
-        this.logger.warn({ err }, "train-12306: failed to spawn process");
-        reject(err);
-        return;
-      }
-
-      this.proc.stdout!.on("data", (chunk: Buffer) => this.onStdout(chunk));
-      this.proc.stderr!.on("data", (chunk: Buffer) => {
+      proc.stderr!.on("data", (chunk: Buffer) => {
         this.logger.debug({ stderr: chunk.toString() }, "train-12306 stderr");
       });
-      this.proc.on("error", (err) => {
-        this.logger.warn({ err }, "train-12306: process error");
-      });
-      this.proc.on("exit", (code) => {
-        this.logger.debug({ code }, "train-12306: process exited");
-        this.proc = null;
-        this.ready = false;
-      });
 
-      const timer = setTimeout(() => {
-        this.logger.warn("train-12306: init timeout");
-        reject(new Error("init timeout"));
-      }, INIT_TIMEOUT_MS);
+      await this.waitForServer();
 
-      this.sendRequest("initialize", {
-        protocolVersion: "2024-11-05",
-        clientInfo: { name: "travel-planner", version: "1.0.0" },
-        capabilities: {},
-      })
-        .then(() => {
-          this.sendNotification("notifications/initialized");
-          return this.sendRequest("tools/list", {});
-        })
-        .then((res) => {
-          clearTimeout(timer);
-          const tools = (res.result as { tools?: McpTool[] })?.tools ?? [];
-          const pattern = /train|ticket|车|票/i;
-          this.trainTools = tools.filter((t) => pattern.test(t.name));
-          this.ready = true;
-          this.logger.info({ toolCount: this.trainTools.length, tools: this.trainTools.map((t) => t.name) }, "train-12306: initialized");
-          resolve();
-        })
-        .catch((err) => {
-          clearTimeout(timer);
-          this.logger.warn({ err }, "train-12306: init failed");
-          reject(err);
-        });
-    });
-  }
+      if (!this.initialized) {
+        await this.doInit();
+      }
 
-  private onStdout(chunk: Buffer): void {
-    this.buf += chunk.toString();
-    const lines = this.buf.split("\n");
-    this.buf = lines.pop()!;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const msg = JSON.parse(trimmed) as JsonRpcResponse;
-        if (msg.id && this.pending.has(msg.id)) {
-          const entry = this.pending.get(msg.id)!;
-          clearTimeout(entry.timer);
-          this.pending.delete(msg.id);
-          entry.resolve(msg);
-        }
-      } catch {
-        // ignore non-JSON lines
+      return await fn();
+    } finally {
+      if (proc && !proc.killed) {
+        try { proc.kill(); } catch { /* ignore */ }
       }
     }
   }
 
-  private sendRequest(method: string, params: Record<string, unknown>): Promise<JsonRpcResponse> {
-    return new Promise((resolve, reject) => {
-      const id = randomUUID();
-      const req: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
-      const payload = JSON.stringify(req) + "\n";
-
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`timeout: ${method}`));
-      }, TOOL_CALL_TIMEOUT_MS);
-
-      this.pending.set(id, { resolve, reject, timer });
-
-      this.proc!.stdin!.write(payload, (err) => {
-        if (err) {
-          clearTimeout(timer);
-          this.pending.delete(id);
-          reject(err);
-        }
-      });
-    });
+  private async waitForServer(): Promise<void> {
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        const resp = await fetch(`http://localhost:${MCP_PORT}/mcp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: "ping", method: "ping", params: {} }),
+        });
+        if (resp.ok || resp.status === 400) return;
+      } catch { /* not ready */ }
+    }
+    throw new Error("train-12306: server did not start");
   }
 
-  private sendNotification(method: string, params?: Record<string, unknown>): void {
-    const notif: JsonRpcNotification = { jsonrpc: "2.0", method, ...(params ? { params } : {}) };
-    const payload = JSON.stringify(notif) + "\n";
-    this.proc!.stdin!.write(payload);
+  private async doInit(): Promise<void> {
+    const initResp = await fetch(`http://localhost:${MCP_PORT}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+      signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS),
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "init", method: "initialize",
+        params: { protocolVersion: "2024-11-05", clientInfo: { name: "travel-planner", version: "1.0.0" }, capabilities: {} },
+      }),
+    });
+    if (!initResp.ok) throw new Error(`init failed: ${initResp.status}`);
+
+    // 12306-mcp HTTP mode needs a fresh process per session, so discover tools on first call
+    // The init response itself tells us the server is ready
+    this.initialized = true;
+
+    // Try to discover tools
+    try {
+      const toolsResp = await fetch(`http://localhost:${MCP_PORT}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "tools", method: "tools/list", params: {} }),
+      });
+      if (toolsResp.ok) {
+        const toolsData = await toolsResp.json() as any;
+        const tools: Array<{ name: string }> = toolsData.result?.tools ?? [];
+        const match = tools.find((t) => /ticket|train|车|票|query|search/i.test(t.name));
+        this.trainToolName = match?.name ?? null;
+        this.logger.info({ tool: this.trainToolName, allTools: tools.map((t) => t.name) }, "train-12306: tools discovered");
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "train-12306: tools/list failed, will try default tool name");
+    }
+  }
+
+  private async callTool(args: Record<string, unknown>): Promise<unknown> {
+    const toolName = this.trainToolName ?? "query_tickets";
+    const resp = await fetch(`http://localhost:${MCP_PORT}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+      signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
+      body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method: "tools/call", params: { name: toolName, arguments: args } }),
+    });
+    if (!resp.ok) throw new Error(`tool call failed: ${resp.status}`);
+    const data = await resp.json() as { result?: unknown; error?: { message: string } };
+    if (data.error) throw new Error(data.error.message);
+    return data.result;
   }
 
   async searchTrains(params: TrainSearchParams): Promise<Train[]> {
     try {
-      await this.ensureProcess();
-    } catch {
-      this.logger.warn("train-12306: searchTrains skipped, init failed");
-      return [];
-    }
+      return await this.withMcpServer(async () => {
+        if (!this.trainToolName) {
+          this.logger.warn("train-12306: no train tool discovered");
+          return [];
+        }
 
-    if (this.trainTools.length === 0) {
-      this.logger.warn("train-12306: no train tools discovered");
-      return [];
-    }
+        let result: unknown;
+        try {
+          result = await this.callTool({
+            from_station: params.from,
+            to_station: params.to,
+            date: params.date,
+          });
+        } catch (err) {
+          this.logger.warn({ err }, "train-12306: tool call failed");
+          return [];
+        }
 
-    const tool = this.trainTools[0];
-    let res: JsonRpcResponse;
-    try {
-      res = await this.sendRequest("tools/call", {
-        name: tool.name,
-        arguments: {
-          from_station: params.from,
-          to_station: params.to,
-          date: params.date,
-        },
+        return this.parseToolResult(result);
       });
     } catch (err) {
-      this.logger.warn({ err }, "train-12306: tool call failed");
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn({ err: msg }, "train-12306: searchTrains failed");
       return [];
     }
-
-    if (res.error) {
-      this.logger.warn({ error: res.error }, "train-12306: tool returned error");
-      return [];
-    }
-
-    return this.parseToolResult(res.result);
   }
 
   private parseToolResult(result: unknown): Train[] {
@@ -204,33 +139,17 @@ export class Train12306Source implements TravelDataSource {
     if (!Array.isArray(content)) return [];
 
     const trains: Train[] = [];
-
     for (const item of content) {
       if (item.type !== "text" || !item.text) continue;
-
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(item.text);
-      } catch {
-        continue;
-      }
-
-      if (Array.isArray(parsed)) {
-        for (const entry of parsed) {
-          const train = this.toTrain(entry);
-          if (train) trains.push(train);
-        }
-      } else if (typeof parsed === "object" && parsed !== null) {
-        const data = parsed as Record<string, unknown>;
-        const list = data.trains ?? data.data ?? data.result ?? data.list ?? [parsed];
-        const items = Array.isArray(list) ? list : [list];
+        const parsed = JSON.parse(item.text);
+        const items = Array.isArray(parsed) ? parsed : [parsed];
         for (const entry of items) {
           const train = this.toTrain(entry);
           if (train) trains.push(train);
         }
-      }
+      } catch { /* skip */ }
     }
-
     return trains;
   }
 
@@ -238,19 +157,19 @@ export class Train12306Source implements TravelDataSource {
     if (typeof raw !== "object" || raw === null) return null;
     const d = raw as Record<string, unknown>;
 
-    const trainNo = String(d.train_no ?? d.trainNo ?? d.trainno ?? d.车次 ?? "");
+    const trainNo = String(d.train_no ?? d.trainNo ?? d.trainno ?? d.车次 ?? d.station_train_code ?? "");
     if (!trainNo) return null;
 
-    const price = Number(d.price ?? d.最低价 ?? d.参考价格 ?? d.price_info ?? 0);
-    const durationHours = this.parseDuration(d.duration ?? d.历时 ?? d.run_time ?? "");
-    const departureTime = String(d.departure_time ?? d.start_time ?? d.出发时间 ?? d.开点 ?? "");
+    const price = Number(d.price ?? d.最低价 ?? d.参考价格 ?? d.min_price ?? 0);
+    const durationHours = this.parseDuration(d.duration ?? d.历时 ?? d.run_time ?? d.run_time_span ?? "");
+    const departureTime = String(d.departure_time ?? d.start_time ?? d.出发时间 ?? d.start_train_date ?? d.开点 ?? "");
     const arrivalTime = String(d.arrival_time ?? d.end_time ?? d.到达时间 ?? d.到点 ?? "");
 
     return {
       trainNo,
       trainType: String(d.train_type ?? d.车型 ?? "高铁"),
-      departureCity: String(d.from_station ?? d.departure_station ?? d.出发站 ?? ""),
-      arrivalCity: String(d.to_station ?? d.arrival_station ?? d.到达站 ?? ""),
+      departureCity: String(d.from_station ?? d.departure_station ?? d.出发站 ?? d.start_station_telecode ?? ""),
+      arrivalCity: String(d.to_station ?? d.arrival_station ?? d.到达站 ?? d.end_station_telecode ?? ""),
       departureTime,
       arrivalTime,
       price: Number.isFinite(price) ? price : 0,
@@ -271,33 +190,12 @@ export class Train12306Source implements TravelDataSource {
     return 0;
   }
 
-  searchFlights(): Promise<Flight[]> {
-    return Promise.resolve([]);
-  }
-
-  searchHotels(): Promise<Hotel[]> {
-    return Promise.resolve([]);
-  }
-
-  searchAttractions(): Promise<Activity[]> {
-    return Promise.resolve([]);
-  }
-
-  searchRestaurants(_params: RestaurantSearchParams): Promise<never[]> {
-    return Promise.resolve([]);
-  }
+  searchFlights(): Promise<Flight[]> { return Promise.resolve([]); }
+  searchHotels(): Promise<Hotel[]> { return Promise.resolve([]); }
+  searchAttractions(): Promise<Activity[]> { return Promise.resolve([]); }
+  searchRestaurants(_params: RestaurantSearchParams): Promise<never[]> { return Promise.resolve([]); }
 
   close(): void {
-    if (this.proc) {
-      this.proc.kill();
-      this.proc = null;
-    }
-    for (const [, entry] of this.pending) {
-      clearTimeout(entry.timer);
-      entry.reject(new Error("closed"));
-    }
-    this.pending.clear();
-    this.ready = false;
-    this.initPromise = null;
+    this.initialized = false;
   }
 }
