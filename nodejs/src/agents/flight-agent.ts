@@ -10,7 +10,6 @@ export class FlightAgent extends BaseAgent {
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
     const pref = state.preferences!;
     const dest = state.selectedDestination!;
-    const maxPrice = state.searchConstraints?.maxFlightPricePerPerson;
 
     if (pref.departureCity === dest.city) {
       state.transportMode = "flight";
@@ -19,18 +18,77 @@ export class FlightAgent extends BaseAgent {
         recommendedOutbound: null, recommendedReturn: null,
         totalFlightCost: 0,
       };
-      this.log.info({ agent: this.name, reason: "same_city" }, "同城旅行，无需航班");
+      this.log.info({ agent: this.name, reason: "same_city" }, "同城旅行，无需交通");
       return state;
     }
 
-    let outbound = await this.dataSource.searchFlights({
+    const tp = pref.transportPreference;
+    const wantTrain = tp === "high_speed_rail" || tp === "train";
+
+    if (wantTrain) {
+      return this.searchTrains(state);
+    }
+
+    if (tp === "no_preference") {
+      const trainState = await this.searchTrains(state);
+      if (trainState.trainOutbound && trainState.trainReturn) {
+        this.log.info({ agent: this.name }, "无偏好时优先选择高铁");
+        return trainState;
+      }
+      this.log.info({ agent: this.name }, "高铁无结果，回退航班");
+    }
+
+    return this.searchFlights(state);
+  }
+
+  private async searchTrains(state: TravelPlanState): Promise<TravelPlanState> {
+    const pref = state.preferences!;
+    const dest = state.selectedDestination!;
+
+    const outbound = await this.dataSource.searchTrains({
+      from: pref.departureCity,
+      to: dest.city,
+      date: pref.startDate,
+    });
+    const returns = await this.dataSource.searchTrains({
+      from: dest.city,
+      to: pref.departureCity,
+      date: pref.endDate,
+    });
+
+    const budgetShare = pref.budget * 0.3;
+    state.trainOutbound = FlightAgent.bestTrain(outbound, budgetShare);
+    state.trainReturn = FlightAgent.bestTrain(returns, budgetShare);
+
+    if (state.trainOutbound && state.trainReturn) {
+      state.transportMode = "train";
+      state.flightResult = {
+        outboundFlights: [], returnFlights: [],
+        recommendedOutbound: null, recommendedReturn: null,
+        totalFlightCost: 0,
+      };
+      const total = (state.trainOutbound.price + state.trainReturn.price) * pref.numTravelers;
+      this.log.info({ agent: this.name, out: state.trainOutbound.trainNo, ret: state.trainReturn.trainNo, total }, "高铁搜索完成");
+    } else {
+      this.log.info({ agent: this.name, outCount: outbound.length, retCount: returns.length }, "高铁搜索结果不足");
+    }
+
+    return state;
+  }
+
+  private async searchFlights(state: TravelPlanState): Promise<TravelPlanState> {
+    const pref = state.preferences!;
+    const dest = state.selectedDestination!;
+    const maxPrice = state.searchConstraints?.maxFlightPricePerPerson;
+
+    const outbound = await this.dataSource.searchFlights({
       origin: pref.departureCity,
       destination: dest.city,
       departureDate: pref.startDate,
       adults: pref.numTravelers,
       maxPrice,
     });
-    let returns = await this.dataSource.searchFlights({
+    const returns = await this.dataSource.searchFlights({
       origin: dest.city,
       destination: pref.departureCity,
       departureDate: pref.endDate,
@@ -67,5 +125,21 @@ export class FlightAgent extends BaseAgent {
     };
 
     return flights.reduce((best, f) => (score(f) > score(best) ? f : best));
+  }
+
+  static bestTrain(trains: Train[], budgetShare: number): Train | null {
+    if (trains.length === 0) return null;
+    const maxPrice = Math.max(...trains.map((t) => t.price)) || 1;
+    const maxDur = Math.max(...trains.map((t) => t.durationHours)) || 1;
+
+    const score = (t: Train): number => {
+      const priceScore = 1 - t.price / maxPrice;
+      const durScore = 1 - t.durationHours / maxDur;
+      const budgetBonus = t.price <= budgetShare ? 10 : 0;
+      const gBonus = t.trainType.includes("高铁") || t.trainNo.startsWith("G") ? 5 : 0;
+      return priceScore * 40 + durScore * 35 + budgetBonus + gBonus;
+    };
+
+    return trains.reduce((best, t) => (score(t) > score(best) ? t : best));
   }
 }

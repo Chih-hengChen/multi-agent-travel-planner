@@ -10,10 +10,13 @@ export class BudgetAgent extends BaseAgent {
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
     const pref = state.preferences!;
     const flightCost = state.flightResult?.totalFlightCost ?? 0;
+    const trainCost = state.transportMode === "train" && state.trainOutbound && state.trainReturn
+      ? (state.trainOutbound.price + state.trainReturn.price) * pref.numTravelers
+      : 0;
     const hotelCost = state.hotelResult?.totalHotelCost ?? 0;
     const activityCost = state.activityResult?.totalActivityCost ?? 0;
 
-    const total = flightCost + hotelCost + activityCost;
+    const total = flightCost + trainCost + hotelCost + activityCost;
     const remaining = pref.budget - total;
     const withinBudget = remaining >= 0;
     const overAmount = Math.max(0, -remaining);
@@ -23,7 +26,7 @@ export class BudgetAgent extends BaseAgent {
       : [];
 
     const breakdown: BudgetBreakdown = {
-      flightCost, hotelCost, activityCost, totalCost: total,
+      flightCost, trainCost, hotelCost, activityCost, totalCost: total,
       budget: pref.budget, remaining, isWithinBudget: withinBudget,
       overBudgetAmount: overAmount, suggestions,
     };

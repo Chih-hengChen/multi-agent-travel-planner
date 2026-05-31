@@ -163,6 +163,7 @@ export type ActivitySearchResult = z.infer<typeof ActivitySearchResultSchema>;
 
 export const BudgetBreakdownSchema = z.object({
   flightCost: z.number().default(0),
+  trainCost: z.number().default(0),
   hotelCost: z.number().default(0),
   activityCost: z.number().default(0),
   totalCost: z.number().default(0),
@@ -220,6 +221,7 @@ export interface PlanSummary {
   destination: string;
   country: string;
   flightCost: number;
+  trainCost: number;
   hotelCost: number;
   activityCost: number;
   totalCost: number;
@@ -233,6 +235,8 @@ export interface PlanSummary {
   transportMode: "flight" | "train";
   outboundFlights: Flight[];
   returnFlights: Flight[];
+  trainOutbound: Train | null;
+  trainReturn: Train | null;
   hotels: Hotel[];
   dayPlans: DayPlan[];
 }

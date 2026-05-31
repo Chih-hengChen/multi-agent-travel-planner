@@ -374,9 +374,9 @@ function renderPlanCard(plan) {
   const statusText = plan.withinBudget ? '预算内 ✓' : `超支 ¥${(plan.totalCost - plan.budget).toLocaleString()}`;
   let html = `
     <div class="plan-card">
-      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄' : '✈️'}</span></h3>
+      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄 高铁' : '✈️ 航班'}</span></h3>
       <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">机票</div><div class="font-bold text-blue-600">¥${plan.flightCost.toLocaleString()}</div></div>
+        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">${plan.transportMode === 'train' ? '高铁' : '机票'}</div><div class="font-bold text-blue-600">¥${(plan.transportMode === 'train' ? plan.trainCost : plan.flightCost).toLocaleString()}</div></div>
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">活动</div><div class="font-bold text-purple-600">¥${plan.activityCost.toLocaleString()}</div></div>
       </div>
@@ -406,17 +406,35 @@ function renderPlanCard(plan) {
 function renderDataSources(plan) {
   let html = '<div class="plan-card mt-3"><h3>📊 数据源参考</h3>';
 
-  // Flights
-  const allFlights = [...(plan.outboundFlights || []), ...(plan.returnFlights || [])];
-  if (allFlights.length > 0) {
-    html += '<div class="mt-2"><div class="text-xs font-semibold text-blue-700 mb-1">✈️ 航班数据</div>';
-    html += '<div class="text-xs space-y-1">';
-    for (const f of allFlights) {
-      html += `<div class="bg-white rounded p-1.5 flex justify-between"><span>${esc(f.airline)} ${esc(f.flightNo)} ${esc(f.departureCity)}→${esc(f.arrivalCity)} ${f.departureTime?.slice(11,16)||''}-${f.arrivalTime?.slice(11,16)||''}</span><span class="text-blue-600 font-semibold">¥${f.price}</span></div>`;
+  // Transport
+  if (plan.transportMode === 'train') {
+    const out = plan.trainOutbound;
+    const ret = plan.trainReturn;
+    if (out || ret) {
+      html += '<div class="mt-2"><div class="text-xs font-semibold text-blue-700 mb-1">🚄 高铁数据</div>';
+      html += '<div class="text-xs space-y-1">';
+      if (out) {
+        html += `<div class="bg-white rounded p-1.5 flex justify-between"><span>去程 ${esc(out.trainNo)} ${esc(out.departureCity)}→${esc(out.arrivalCity)} ${out.departureTime}-${out.arrivalTime}</span><span class="text-blue-600 font-semibold">¥${out.price}</span></div>`;
+      }
+      if (ret) {
+        html += `<div class="bg-white rounded p-1.5 flex justify-between"><span>返程 ${esc(ret.trainNo)} ${esc(ret.departureCity)}→${esc(ret.arrivalCity)} ${ret.departureTime}-${ret.arrivalTime}</span><span class="text-blue-600 font-semibold">¥${ret.price}</span></div>`;
+      }
+      html += '</div></div>';
+    } else {
+      html += '<div class="text-xs text-gray-400 mt-1">🚄 高铁：暂无数据</div>';
     }
-    html += '</div></div>';
   } else {
-    html += '<div class="text-xs text-gray-400 mt-1">✈️ 航班：暂无数据</div>';
+    const allFlights = [...(plan.outboundFlights || []), ...(plan.returnFlights || [])];
+    if (allFlights.length > 0) {
+      html += '<div class="mt-2"><div class="text-xs font-semibold text-blue-700 mb-1">✈️ 航班数据</div>';
+      html += '<div class="text-xs space-y-1">';
+      for (const f of allFlights) {
+        html += `<div class="bg-white rounded p-1.5 flex justify-between"><span>${esc(f.airline)} ${esc(f.flightNo)} ${esc(f.departureCity)}→${esc(f.arrivalCity)} ${f.departureTime?.slice(11,16)||''}-${f.arrivalTime?.slice(11,16)||''}</span><span class="text-blue-600 font-semibold">¥${f.price}</span></div>`;
+      }
+      html += '</div></div>';
+    } else {
+      html += '<div class="text-xs text-gray-400 mt-1">✈️ 航班：暂无数据</div>';
+    }
   }
 
   // Hotels

@@ -62,6 +62,7 @@ export function registerRoutes(app: FastifyInstance) {
       destination: dest?.city ?? "",
       country: dest?.country ?? "",
       flightCost: bb?.flightCost ?? 0,
+      trainCost: bb?.trainCost ?? 0,
       hotelCost: bb?.hotelCost ?? 0,
       activityCost: bb?.activityCost ?? 0,
       totalCost: bb?.totalCost ?? 0,
@@ -75,6 +76,8 @@ export function registerRoutes(app: FastifyInstance) {
       transportMode: state.transportMode,
       outboundFlights: state.flightResult?.outboundFlights ?? [],
       returnFlights: state.flightResult?.returnFlights ?? [],
+      trainOutbound: state.trainOutbound ?? null,
+      trainReturn: state.trainReturn ?? null,
       hotels: state.hotelResult?.hotels ?? [],
       dayPlans: state.activityResult?.dayPlans ?? [],
     };
