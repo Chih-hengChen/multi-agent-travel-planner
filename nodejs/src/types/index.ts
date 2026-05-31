@@ -68,6 +68,11 @@ export const UserPreferencesSchema = z.object({
   departureTime: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
   budgetStrictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
   specialRequests: z.string().optional(),
+  accommodationType: z.enum(["hotel", "homestay", "resort", "any"]).default("any"),
+  preferredStarRating: z.number().min(1).max(5).optional(),
+  preferredHotelBrands: z.array(z.string()).default([]),
+  localTransitMode: z.enum(["public_transit", "taxi", "rental_car", "mixed"]).default("mixed"),
+  diningPreference: z.enum(["trending", "local_specialties", "mixed"]).default("mixed"),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
@@ -221,6 +226,11 @@ export const PlanRequestSchema = z.object({
   departure_time: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
   budget_strictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
   special_requests: z.string().optional(),
+  accommodation_type: z.enum(["hotel", "homestay", "resort", "any"]).default("any"),
+  preferred_star_rating: z.number().min(1).max(5).optional(),
+  preferred_hotel_brands: z.array(z.string()).default([]),
+  local_transit_mode: z.enum(["public_transit", "taxi", "rental_car", "mixed"]).default("mixed"),
+  dining_preference: z.enum(["trending", "local_specialties", "mixed"]).default("mixed"),
 });
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 

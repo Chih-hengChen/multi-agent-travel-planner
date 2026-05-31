@@ -31,6 +31,10 @@ export async function runCli() {
     transportPreference: "no_preference",
     departureTime: "flexible",
     budgetStrictness: "strict",
+    accommodationType: "any",
+    preferredHotelBrands: [],
+    localTransitMode: "mixed",
+    diningPreference: "mixed",
   };
 
   const log = pino({ level: "warn" });

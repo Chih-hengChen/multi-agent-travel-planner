@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import { TravelStyle, ActivitySubType, DINING_PRICE_BY_STYLE, TRANSIT_DAILY_COST, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState } from "../types/index.js";
+import { TravelStyle, ActivitySubType, DINING_PRICE_BY_STYLE, TRANSIT_DAILY_COST, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState, type UserPreferences } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
@@ -11,6 +11,16 @@ const DINING_TEMPLATES = [
   { name: "当地正餐", mealType: "dinner", durationHours: 2.0, rating: 9.0 },
   { name: "夜市美食", mealType: "dinner", durationHours: 2.0, rating: 8.5 },
   { name: "米其林餐厅体验", mealType: "dinner", durationHours: 2.5, rating: 9.5 },
+];
+
+const DINING_TEMPLATES_TRENDING = [
+  { name: "网红打卡早午餐", mealType: "breakfast", durationHours: 1.0, rating: 8.5 },
+  { name: "ins风咖啡厅", mealType: "breakfast", durationHours: 1.0, rating: 8.0 },
+  { name: "小红书推荐餐厅", mealType: "lunch", durationHours: 1.5, rating: 9.0 },
+  { name: "博主探店", mealType: "lunch", durationHours: 1.5, rating: 8.5 },
+  { name: "黑珍珠餐厅", mealType: "dinner", durationHours: 2.0, rating: 9.5 },
+  { name: "热门排队餐厅", mealType: "dinner", durationHours: 2.0, rating: 9.0 },
+  { name: "米其林必比登", mealType: "dinner", durationHours: 2.5, rating: 9.5 },
 ];
 
 function diningPrice(mealType: string, style: TravelStyle): number {
@@ -28,8 +38,7 @@ export class ActivityAgent extends BaseAgent {
     const pref = state.preferences!;
     const dest = state.selectedDestination!;
     const days = ActivityAgent.getTravelDays(pref.startDate, pref.endDate);
-    const travelStyle = pref.travelStyle as TravelStyle;
-    const transitCost = TRANSIT_DAILY_COST[travelStyle] ?? 40;
+    const transitCost = TRANSIT_DAILY_COST[pref.travelStyle as TravelStyle] ?? 40;
 
     const attractions = await this.dataSource.searchAttractions({
       city: dest.city,
@@ -43,7 +52,7 @@ export class ActivityAgent extends BaseAgent {
 
     let attrIdx = 0;
     for (const dateStr of days) {
-      const plan = await this.planOneDay(dateStr, dest.city, travelStyle, attractions, attrIdx, transitCost);
+      const plan = await this.planOneDay(dateStr, dest.city, pref, attractions, attrIdx, transitCost);
       if (maxPerDay) {
         let dayActivityCost = plan.activities.reduce((s, a) => s + a.price, 0);
         while (dayActivityCost > maxPerDay && plan.activities.length > 2) {
@@ -83,35 +92,38 @@ export class ActivityAgent extends BaseAgent {
   private async planOneDay(
     date: string,
     city: string,
-    travelStyle: TravelStyle,
+    pref: UserPreferences,
     attractions: Activity[],
     startIdx: number,
     fallbackTransitCost: number,
   ): Promise<DayPlan> {
     const activities: Activity[] = [];
+    const travelStyle = pref.travelStyle as TravelStyle;
 
     const morningAttr = attractions[(startIdx) % attractions.length];
     if (morningAttr) {
       activities.push({ ...morningAttr, timeSlot: "morning", description: `${date} 上午 - ${morningAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "breakfast", travelStyle));
+    activities.push(makeDining(city, date, "breakfast", travelStyle, pref.diningPreference));
 
     const afternoonAttr = attractions[(startIdx + 1) % attractions.length];
     if (afternoonAttr) {
       activities.push({ ...afternoonAttr, timeSlot: "afternoon", description: `${date} 下午 - ${afternoonAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "lunch", travelStyle));
+    activities.push(makeDining(city, date, "lunch", travelStyle, pref.diningPreference));
 
     const eveningAttr = attractions[(startIdx + 2) % attractions.length];
     if (eveningAttr) {
       activities.push({ ...eveningAttr, timeSlot: "evening", description: `${date} 晚上 - ${eveningAttr.name}` });
     }
 
-    activities.push(makeDining(city, date, "dinner", travelStyle));
+    activities.push(makeDining(city, date, "dinner", travelStyle, pref.diningPreference));
 
-    const transitActivities = await this.buildTransitSegments(activities.filter((a) => a.geoLocation), city, date, fallbackTransitCost);
+    const transitActivities = await this.buildTransitSegments(
+      activities.filter((a) => a.geoLocation), city, date, fallbackTransitCost, pref.localTransitMode,
+    );
     activities.push(...transitActivities);
 
     if (transitActivities.length === 0) {
@@ -136,8 +148,43 @@ export class ActivityAgent extends BaseAgent {
     city: string,
     date: string,
     fallbackCost: number,
+    localTransitMode: string,
   ): Promise<Activity[]> {
     if (locatedActivities.length < 2) return [];
+
+    if (localTransitMode === "rental_car") {
+      return [{
+        name: "租车自驾",
+        category: "transit",
+        location: city,
+        durationHours: 1.0,
+        price: Math.round(fallbackCost * 0.8),
+        rating: 8.0,
+        description: `${date} 租车自驾`,
+        timeSlot: "morning",
+        subType: ActivitySubType.TRANSIT,
+      }];
+    }
+
+    if (localTransitMode === "taxi") {
+      const segs: Activity[] = [];
+      for (let i = 0; i < locatedActivities.length - 1; i++) {
+        const from = locatedActivities[i]!;
+        segs.push({
+          name: "打车",
+          category: "transit",
+          location: city,
+          durationHours: 0.5,
+          price: Math.round(fallbackCost / 3),
+          rating: 8.0,
+          description: `${from.name} → ${locatedActivities[i + 1]!.name}`,
+          timeSlot: from.timeSlot,
+          subType: ActivitySubType.TRANSIT,
+        });
+      }
+      return segs;
+    }
+
     if (!this.dataSource.planTransitRoute) return [];
 
     const transitActs: Activity[] = [];
@@ -184,9 +231,14 @@ export class ActivityAgent extends BaseAgent {
   }
 }
 
-function makeDining(city: string, date: string, mealType: string, travelStyle: TravelStyle): Activity {
-  const candidates = DINING_TEMPLATES.filter((d) => d.mealType === mealType);
-  const pick = candidates[Math.floor(Math.random() * candidates.length)] ?? DINING_TEMPLATES[0]!;
+function makeDining(city: string, date: string, mealType: string, travelStyle: TravelStyle, diningPreference: string): Activity {
+  const isTrending = diningPreference === "trending";
+  const isLocal = diningPreference === "local_specialties";
+  const pool = isTrending ? DINING_TEMPLATES_TRENDING
+    : isLocal ? DINING_TEMPLATES
+    : [...DINING_TEMPLATES, ...DINING_TEMPLATES_TRENDING];
+  const candidates = pool.filter((d) => d.mealType === mealType);
+  const pick = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0]!;
   const price = diningPrice(mealType, travelStyle);
   return {
     name: pick.name,

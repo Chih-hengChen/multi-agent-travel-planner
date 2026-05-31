@@ -66,6 +66,30 @@ export const TOOLS: ToolDef[] = [
           type: "string",
           description: "特殊需求，如：必须去环球影城",
         },
+        accommodation_type: {
+          type: "string",
+          enum: ["hotel", "homestay", "resort", "any"],
+          description: "住宿类型偏好，默认 any",
+        },
+        preferred_star_rating: {
+          type: "number",
+          description: "偏好酒店星级 1-5",
+        },
+        preferred_hotel_brands: {
+          type: "array",
+          items: { type: "string" },
+          description: "偏好酒店品牌，如：希尔顿、万豪",
+        },
+        local_transit_mode: {
+          type: "string",
+          enum: ["public_transit", "taxi", "rental_car", "mixed"],
+          description: "市内交通方式，默认 mixed",
+        },
+        dining_preference: {
+          type: "string",
+          enum: ["trending", "local_specialties", "mixed"],
+          description: "餐饮偏好，默认 mixed",
+        },
       },
       required: ["destination", "departure_city", "start_date", "end_date", "budget"],
     },
@@ -96,6 +120,11 @@ export async function executeTool(
     departureTime: (input.departure_time as UserPreferences["departureTime"]) ?? "flexible",
     budgetStrictness: (input.budget_strictness as UserPreferences["budgetStrictness"]) ?? "strict",
     specialRequests: input.special_requests ? String(input.special_requests) : undefined,
+    accommodationType: (input.accommodation_type as UserPreferences["accommodationType"]) ?? "any",
+    preferredStarRating: input.preferred_star_rating ? Number(input.preferred_star_rating) : undefined,
+    preferredHotelBrands: Array.isArray(input.preferred_hotel_brands) ? input.preferred_hotel_brands.map(String) : [],
+    localTransitMode: (input.local_transit_mode as UserPreferences["localTransitMode"]) ?? "mixed",
+    diningPreference: (input.dining_preference as UserPreferences["diningPreference"]) ?? "mixed",
   };
 
   const pipeline = new TravelPlanningPipeline(log);

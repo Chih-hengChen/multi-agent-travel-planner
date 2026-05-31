@@ -44,6 +44,11 @@ export function registerRoutes(app: FastifyInstance) {
       departureTime: req.departure_time,
       budgetStrictness: req.budget_strictness,
       specialRequests: req.special_requests,
+      accommodationType: req.accommodation_type,
+      preferredStarRating: req.preferred_star_rating,
+      preferredHotelBrands: req.preferred_hotel_brands,
+      localTransitMode: req.local_transit_mode,
+      diningPreference: req.dining_preference,
     };
 
     const pipeline = new TravelPlanningPipeline();
@@ -94,6 +99,11 @@ export function registerRoutes(app: FastifyInstance) {
       departureTime: req.departure_time,
       budgetStrictness: req.budget_strictness,
       specialRequests: req.special_requests,
+      accommodationType: req.accommodation_type,
+      preferredStarRating: req.preferred_star_rating,
+      preferredHotelBrands: req.preferred_hotel_brands,
+      localTransitMode: req.local_transit_mode,
+      diningPreference: req.dining_preference,
     };
 
     const pipeline = new TravelPlanningPipeline();

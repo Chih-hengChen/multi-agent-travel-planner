@@ -102,6 +102,10 @@ export async function quickPlan(opts: {
     transportPreference: "no_preference",
     departureTime: "flexible",
     budgetStrictness: "strict",
+    accommodationType: "any",
+    preferredHotelBrands: [],
+    localTransitMode: "mixed",
+    diningPreference: "mixed",
   };
   const pipeline = new TravelPlanningPipeline();
   return pipeline.run(prefs);

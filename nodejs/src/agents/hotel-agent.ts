@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { Hotel, HotelSearchResult, TravelPlanState } from "../types/index.js";
+import type { Hotel, HotelSearchResult, TravelPlanState, UserPreferences } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
@@ -21,7 +21,7 @@ export class HotelAgent extends BaseAgent {
       maxStarRating: state.searchConstraints?.maxHotelStarRating,
     });
 
-    const rec = HotelAgent.bestHotel(hotels, (pref.budget * 0.4) / Math.max(nights, 1), pref.travelStyle);
+    const rec = HotelAgent.bestHotel(hotels, (pref.budget * 0.4) / Math.max(nights, 1), pref);
     const rooms = Math.max(1, Math.ceil(pref.numTravelers / 2));
     const total = rec ? rec.pricePerNight * nights * rooms : 0;
 
@@ -38,20 +38,25 @@ export class HotelAgent extends BaseAgent {
     } catch { return 3; }
   }
 
-  static bestHotel(hotels: Hotel[], nightlyBudget: number, style: string): Hotel | null {
+  static bestHotel(hotels: Hotel[], nightlyBudget: number, pref: UserPreferences): Hotel | null {
     if (hotels.length === 0) return null;
-    const starPref: Record<string, number> = {
+    const starByStyle: Record<string, number> = {
       budget: 2.5, comfort: 3.5, luxury: 4.5,
       adventure: 2.5, cultural: 3.5, relaxation: 4.0,
     };
-    const targetStar = starPref[style] ?? 3.5;
+    const targetStar = pref.preferredStarRating ?? starByStyle[pref.travelStyle] ?? 3.5;
 
     const score = (h: Hotel): number => {
       const priceOk = h.pricePerNight <= nightlyBudget ? 20 : 0;
       const starFit = 30 - Math.abs(h.starRating - targetStar) * 10;
       const ratingS = h.userRating * 3;
       const distS = Math.max(0, 10 - h.distanceToCenterKm * 3);
-      return priceOk + starFit + ratingS + distS;
+      let brandBonus = 0;
+      if (pref.preferredHotelBrands.length > 0) {
+        const nameLc = h.name.toLowerCase();
+        if (pref.preferredHotelBrands.some(b => nameLc.includes(b.toLowerCase()))) brandBonus = 15;
+      }
+      return priceOk + starFit + ratingS + distS + brandBonus;
     };
 
     return hotels.reduce((best, h) => (score(h) > score(best) ? h : best));
