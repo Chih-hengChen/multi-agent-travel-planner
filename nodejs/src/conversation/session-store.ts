@@ -41,7 +41,7 @@ export class MemorySessionStore implements SessionStore {
       this.store.delete(sessionId);
       return null;
     }
-    return entry.ctx;
+    return structuredClone(entry.ctx);
   }
 
   async set(sessionId: string, ctx: ConversationContext): Promise<void> {

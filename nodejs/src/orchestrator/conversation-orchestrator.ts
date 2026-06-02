@@ -60,6 +60,7 @@ export class ConversationOrchestrator {
     }
 
     ctx.state = result.newState;
+    ctx.version++;
     ctx.updatedAt = Date.now();
     await this.sessionStore.set(sessionId, ctx);
     await this.sessionStore.refreshTtl(sessionId);
