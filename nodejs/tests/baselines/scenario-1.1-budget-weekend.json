@@ -1,0 +1,10 @@
+{
+  "scenario": "1.1-budget-weekend",
+  "description": "上海→北京 周末预算1500 strict",
+  "transportMode": "train",
+  "trainCostBudget": 553,
+  "hotelPricePerNightBudget": 120,
+  "adjustmentRounds": 0,
+  "dayPlanCount": 2,
+  "notes": "no_preference时优先选高铁（trainOutbound+trainReturn均存在），选择前门青旅(120/晚)"
+}

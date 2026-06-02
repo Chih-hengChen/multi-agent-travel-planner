@@ -1,0 +1,9 @@
+{
+  "scenario": "2.1-rail-bnb",
+  "description": "武汉→景德镇 高铁+民宿 3000",
+  "transportMode": "train",
+  "flightCost": 0,
+  "hasTrainOutbound": true,
+  "hasTrainReturn": true,
+  "notes": "transportPreference=high_speed_rail强制走train路径"
+}

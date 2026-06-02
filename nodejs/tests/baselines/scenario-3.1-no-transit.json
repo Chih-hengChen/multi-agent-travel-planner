@@ -1,0 +1,8 @@
+{
+  "scenario": "3.1-no-transit",
+  "description": "大理→腾冲 无轨交 2000",
+  "transportMode": "flight",
+  "flightCost": 0,
+  "trainCost": 0,
+  "notes": "无航班无列车，仅酒店+活动费用，pipeline不崩溃"
+}

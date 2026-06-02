@@ -1,0 +1,9 @@
+{
+  "scenario": "1.2-business-luxury",
+  "description": "广州→成都 豪华8000 luxury",
+  "transportMode": "flight",
+  "adjustmentRounds": 0,
+  "isWithinBudget": true,
+  "hotelStarRatingMin": 4.0,
+  "notes": "luxury预算充足，不触发ADJUSTING循环"
+}
