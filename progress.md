@@ -2,19 +2,27 @@
 
 ## 已完成
 
+### Agent Loop 架构重写 (2026-05-31)
+
+- `ba81715` feat: LLM agent loop — collect_preferences 工具 + SSE 事件流 + 前端 Agent Loop 交互。LLM 识别旅行意图后调用 collect_preferences 触发前端弹窗，用户填写偏好后以 tool_result 回传继续对话。删除所有硬编码假数据（Mock 目的地、模板餐厅、fallback 酒店、train-data.ts）
+- `c06b845` feat: 真实数据源集成 — 12306 MCP 火车票查询（JSON-RPC over stdio）、高德 POI 餐厅搜索、ActivityAgent 用真实餐厅 POI。所有 DataSource 实现 searchRestaurants 接口
+
 ### 真实数据源 + 用户偏好 + 前端向导 (2026-05-30)
 
-- **Phase 1** `054d9ca`: 真实数据源接入 — Amadeus (航班), Booking.com/RapidAPI (酒店), 高德地图 (景点), 火车票价参考表。删除全部 Mock 数据生成（prng.ts, seed.ts）
-- **Phase 2** `4e7cff8`: 用户偏好扩展 — transportPreference, departureTime, budgetStrictness, specialRequests。FlightAgent 支持火车优先，BudgetAgent 支持灵活预算
-- **Phase 3** `3c6b125`: 前端偏好采集向导 — 5步可折叠面板（基础信息→交通→兴趣→预算态度→特殊需求），芯片选择+预算滑块
+- `054d9ca`: Amadeus 航班 + Booking.com 酒店 + 高德景点 + 火车票价参考
+- `4e7cff8`: 偏好扩展（交通/出发时间/预算态度/特殊需求）
+- `3c6b125`: 前端偏好采集向导
 
-### 之前的提交
+### Phase 1: 对话状态机 + 信息收集 (2026-06-02)
 
-- `df4eecb`: tool_use + SSE 流式对话重构
-- `d68a7e5`: 确定性 Mock + 条件重搜 + Activity 模型重构
+- `719a5f7` feat: 多轮对话状态机（INIT → GATHERING → SEARCHING → COMPLETED）+ Session 管理 + 前端重构
+- 新增 7 个模块：state-machine, context, session-store, info-extractor, gathering-agent, turn-handler, conversation-orchestrator
+- 前端移除 wizard modal，改为自然语言多轮对话 + 状态进度指示器
+- 保留旧 API（/api/chat/stream, /api/plan）不受影响
 
 ## 下一步待办
 
-- 配置真实 API Key 后端到端测试（Amadeus/高德/RapidAPI）
-- 验证未配置 Key 时的优雅降级
-- DestinationAgent 当前仍使用硬编码目的地列表，应接入 LLM 动态推荐
+- Phase 2: 数据源选择卡片（SourceResolver + 前端展示多数据源对比）
+- Phase 3: 行程编辑交互（拖拽、替换、备注）
+- 端到端测试：配置真实 API Key 验证完整流程
+- HotelAgent 无 fallback 后需验证 Booking.com API 可用性

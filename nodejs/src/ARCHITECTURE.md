@@ -7,7 +7,7 @@ src/
 ├── agents/                    # 6 个领域 Agent
 │   ├── base-agent.ts          # 抽象基类（模板方法 + LLM 调用）
 │   ├── preference-agent.ts    # 偏好补全
-│   ├── destination-agent.ts   # 目的地推荐（LLM + Mock 双模式）
+│   ├── destination-agent.ts   # 目的地推荐（LLM 生成）
 │   ├── flight-agent.ts        # 航班搜索与评分
 │   ├── hotel-agent.ts         # 酒店搜索与评分
 │   ├── activity-agent.ts      # 每日活动规划
@@ -36,7 +36,51 @@ src/
 
 ## 核心数据流
 
-### 对话式聊天流（主入口）
+### 多轮对话流（新主入口）
+
+```
+浏览器 chat.html
+  │  POST /api/chat → { sessionId }
+  │  POST /api/chat/:sid (SSE) → { message }
+  ▼
+ConversationOrchestrator :: handleMessage(sid, msg, emit)
+  │  load ConversationContext from SessionStore
+  ▼
+TurnHandler :: handleTurn(ctx, userMessage)
+  │
+  │  1. InfoExtractor.extract(msg, history, knownFields) → ExtractedFields
+  │     │  mock: 正则提取城市/日期/预算/人数/交通偏好
+  │     │  LLM: prompt → JSON 解析 + 字段校验
+  │     ▼
+  │  2. mergeExtracted(ctx, extracted) → 更新 ctx 字段
+  │
+  │  3. advanceState(ctx) → 检查字段完整性推进状态
+  │     │  INIT → GATHERING_BASICS (有 destination)
+  │     │  GATHERING_BASICS → GATHERING_PREFERENCES (basics 齐全)
+  │     │  GATHERING_PREFERENCES → SEARCHING (preferences 齐全 or maxTurns)
+  │     ▼
+  │  4a. 仍在 GATHERING → GatheringAgent.generateQuestion(ctx)
+  │     → SSE: text_delta + question { text, fields }
+  │
+  │  4b. 推进到 SEARCHING → toUserPreferences(ctx)
+  │     → TravelPlanningPipeline.run(prefs) → buildPlanSummary(state)
+  │     → SSE: text_delta + tool_result { plan }
+  ▼
+ConversationOrchestrator → emit SSE events → save ctx → SessionStore
+```
+
+**SSE 事件类型（多轮对话）**:
+
+| 事件 | 数据 |
+|------|------|
+| `text_delta` | `{ text: "..." }` |
+| `state_change` | `{ state: "GATHERING_BASICS" }` |
+| `question` | `{ text, fields: ["startDate", "endDate"] }` |
+| `tool_result` | `{ tool: "plan_travel", result: PlanSummary }` |
+| `error` | `{ error: "message", recoverable: true }` |
+| `done` | `{}` |
+
+### 对话式聊天流（旧入口，仍可用）
 
 ```
 浏览器 chat.html
