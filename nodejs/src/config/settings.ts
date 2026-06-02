@@ -15,4 +15,7 @@ export const settings = Object.freeze({
   LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
   RAPIDAPI_KEY: process.env.RAPIDAPI_KEY ?? "",
   AMAP_API_KEY: process.env.AMAP_API_KEY ?? "",
+  SESSION_TTL_MS: parseInt(process.env.SESSION_TTL_MS ?? "7200000", 10),
+  MAX_CONVERSATION_TURNS: parseInt(process.env.MAX_CONVERSATION_TURNS ?? "20", 10),
+  MAX_GATHERING_TURNS: parseInt(process.env.MAX_GATHERING_TURNS ?? "6", 10),
 });

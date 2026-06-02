@@ -1,7 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { TravelStyle, PlanRequestSchema, type PlanSummary, type UserPreferences } from "../types/index.js";
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
-import { handleChatStream } from "./stream-handler.js";
+import { handleChatStream, handleConversationMessage } from "./stream-handler.js";
+import { createSessionStore } from "../conversation/session-store.js";
+import { InfoExtractor } from "../conversation/info-extractor.js";
+import { GatheringAgent } from "../agents/gathering-agent.js";
+import { TurnHandler } from "../conversation/turn-handler.js";
+import { ConversationOrchestrator } from "../orchestrator/conversation-orchestrator.js";
+
+const sessionStore = createSessionStore();
+const infoExtractor = new InfoExtractor();
+const gatheringAgent = new GatheringAgent();
+const turnHandler = new TurnHandler(infoExtractor, gatheringAgent, new TravelPlanningPipeline());
+const orchestrator = new ConversationOrchestrator(sessionStore, turnHandler);
 
 export function registerRoutes(app: FastifyInstance) {
   app.get("/", async (_request, reply) => {
@@ -116,5 +127,27 @@ export function registerRoutes(app: FastifyInstance) {
     const pipeline = new TravelPlanningPipeline();
     const state = await pipeline.run(prefs);
     return reply.send(JSON.parse(JSON.stringify(state)));
+  });
+
+  app.post("/api/chat", async (_request, reply) => {
+    const sessionId = await orchestrator.createSession();
+    return reply.send({ sessionId });
+  });
+
+  app.post("/api/chat/:sid", async (request, reply) => {
+    await handleConversationMessage(request as any, reply, orchestrator);
+  });
+
+  app.get("/api/chat/:sid/state", async (request, reply) => {
+    const { sid } = (request as any).params as { sid: string };
+    const state = await orchestrator.getSessionState(sid);
+    if (!state) return reply.status(404).send({ error: "Session not found" });
+    return reply.send(state);
+  });
+
+  app.delete("/api/chat/:sid", async (request, reply) => {
+    const { sid } = (request as any).params as { sid: string };
+    await orchestrator.deleteSession(sid);
+    return reply.send({ ok: true });
   });
 }

@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { streamChat, type Message, type ContentBlock } from "./llm-client.js";
 import { TOOLS, executeTool } from "./tools.js";
+import type { ConversationOrchestrator } from "../orchestrator/conversation-orchestrator.js";
 
 function buildSystemPrompt(): string {
   const today = new Date();
@@ -112,4 +113,41 @@ async function runAgentLoop(
       messages.push({ role: "user", content: [toolResultBlock] });
     }
   }
+}
+
+interface ConversationMessageBody {
+  message: string;
+}
+
+export async function handleConversationMessage(
+  req: FastifyRequest<{ Params: { sid: string }; Body: ConversationMessageBody }>,
+  reply: FastifyReply,
+  orchestrator: ConversationOrchestrator,
+): Promise<void> {
+  const { sid } = req.params;
+  const { message } = req.body;
+
+  if (!message?.trim()) {
+    return reply.status(400).send({ error: "message is required" });
+  }
+
+  reply.raw.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  const emit = (event: string, data: unknown) => {
+    reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    await orchestrator.handleMessage(sid, message, emit);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    emit("error", { error: msg, recoverable: false });
+  }
+
+  reply.raw.write("event: done\ndata: {}\n\n");
+  reply.raw.end();
 }
