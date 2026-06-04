@@ -1,81 +1,6 @@
 import { settings } from "../config/settings.js";
 import type { ExtractedFields } from "./context.js";
 
-const CITY_PATTERN = /(?:去|到|前往|出发|从|飞|坐.*到)\s*([一-龥]{2,4}(?:市|省|区|县)?)/;
-const DATE_PATTERN = /(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})[日号]?/;
-const SHORT_DATE_PATTERN = /(\d{1,2})[月\/\-](\d{1,2})[日号]?/;
-const NUM_PEOPLE_PATTERN = /(\d+)\s*(?:个?人|位)/;
-const BUDGET_PATTERN = /(\d+)\s*(?:块钱?|元|块|预算)/;
-const COMFORT_PATTERN = /舒适|舒适型/;
-const BUDGET_STYLE_PATTERN = /经济|便宜/;
-const LUXURY_PATTERN = /豪华|高档/;
-
-function mockExtract(text: string): ExtractedFields {
-  const result: ExtractedFields = {};
-
-  const cityMatch = text.match(CITY_PATTERN);
-  if (cityMatch) {
-    const city = cityMatch[1].replace(/市|省|区|县$/, "");
-    if (text.includes("出发") || text.includes("从")) {
-      result.departureCity = city;
-    } else {
-      result.destination = city;
-    }
-  }
-
-  const dateMatch = text.match(DATE_PATTERN);
-  if (dateMatch) {
-    const date = `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}`;
-    if (!result.startDate) {
-      result.startDate = date;
-    } else {
-      result.endDate = date;
-    }
-  } else {
-    const shortDateMatch = text.match(SHORT_DATE_PATTERN);
-    if (shortDateMatch) {
-      const year = new Date().getFullYear();
-      const date = `${year}-${shortDateMatch[1].padStart(2, "0")}-${shortDateMatch[2].padStart(2, "0")}`;
-      if (!result.startDate) {
-        result.startDate = date;
-      } else {
-        result.endDate = date;
-      }
-    }
-  }
-
-  const peopleMatch = text.match(NUM_PEOPLE_PATTERN);
-  if (peopleMatch) {
-    result.numTravelers = parseInt(peopleMatch[1], 10);
-  }
-
-  const budgetMatch = text.match(BUDGET_PATTERN);
-  if (budgetMatch) {
-    result.budget = parseInt(budgetMatch[1], 10);
-  }
-
-  if (COMFORT_PATTERN.test(text)) result.accommodationStyle = "comfort";
-  else if (BUDGET_STYLE_PATTERN.test(text)) result.accommodationStyle = "budget";
-  else if (LUXURY_PATTERN.test(text)) result.accommodationStyle = "luxury";
-
-  if (text.includes("飞机") || text.includes("航班") || text.includes("坐飞机")) {
-    result.transportPreference = "flight";
-  } else if (text.includes("高铁") || text.includes("动车")) {
-    result.transportPreference = "high_speed_rail";
-  } else if (text.includes("火车")) {
-    result.transportPreference = "train";
-  }
-
-  const interests: string[] = [];
-  if (/历史文化|胡同/.test(text)) interests.push("博物馆", "故宫", "胡同", "历史遗址");
-  if (/美食|吃货/.test(text)) interests.push("美食");
-  if (/自然|风景/.test(text)) interests.push("自然风光");
-  if (/购物/.test(text)) interests.push("购物");
-  if (interests.length > 0) result.travelInterests = interests;
-
-  return result;
-}
-
 function validateField(key: string, value: unknown): boolean {
   if (value === undefined || value === null) return false;
 
@@ -110,10 +35,6 @@ export class InfoExtractor {
     history: Array<{ role: string; content: string }>,
     knownFields: Record<string, unknown>,
   ): Promise<ExtractedFields> {
-    if (settings.LLM_PROVIDER === "mock") {
-      return mockExtract(userMessage);
-    }
-
     const nonEmptyKnown = Object.fromEntries(
       Object.entries(knownFields).filter(([, v]) => v !== undefined && v !== null && v !== ""),
     );

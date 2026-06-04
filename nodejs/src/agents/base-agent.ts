@@ -13,13 +13,11 @@ const NOOP_SOURCE: TravelDataSource = {
 
 export abstract class BaseAgent {
   abstract readonly name: string;
-  protected readonly llmProvider: string;
   protected readonly log: Logger;
   protected readonly dataSource: TravelDataSource;
 
   constructor(log: Logger, dataSource?: TravelDataSource) {
     this.log = log;
-    this.llmProvider = settings.LLM_PROVIDER;
     this.dataSource = dataSource ?? NOOP_SOURCE;
   }
 
@@ -39,9 +37,6 @@ export abstract class BaseAgent {
   protected abstract execute(state: TravelPlanState): Promise<TravelPlanState>;
 
   protected async callLlm(prompt: string, systemPrompt?: string): Promise<string> {
-    if (this.llmProvider === "mock") {
-      return JSON.stringify({ response: `[MOCK] ${this.name} processed the request.` });
-    }
     return this.realLlm(prompt, systemPrompt);
   }
 

@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const settings = Object.freeze({
-  LLM_PROVIDER: process.env.LLM_PROVIDER ?? "mock",
+  LLM_PROVIDER: process.env.LLM_PROVIDER ?? "openai",
   LLM_API_KEY: process.env.LLM_API_KEY ?? "",
   LLM_BASE_URL: process.env.LLM_BASE_URL ?? "https://api.minimax.chat/v1",
   LLM_MODEL: process.env.LLM_MODEL ?? "MiniMax-M2.7",

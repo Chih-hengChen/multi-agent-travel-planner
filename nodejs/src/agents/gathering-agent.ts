@@ -1,7 +1,7 @@
-import { settings } from "../config/settings.js";
 import type { ConversationContext } from "../conversation/context.js";
 import { getMissingBasics, getMissingPreferences } from "../conversation/context.js";
 import { ConversationState } from "../conversation/state-machine.js";
+import { settings } from "../config/settings.js";
 
 const FIELD_LABELS: Record<string, string> = {
   destination: "目的地",
@@ -22,11 +22,6 @@ export class GatheringAgent {
     if (missing.length === 0) return { text: "", fields: [] };
 
     const fields = missing.slice(0, 3);
-
-    if (settings.LLM_PROVIDER === "mock") {
-      return { text: this.mockQuestion(fields), fields };
-    }
-
     const text = await this.llmQuestion(ctx, fields);
     return { text, fields };
   }
@@ -42,14 +37,6 @@ export class GatheringAgent {
       return getMissingPreferences(ctx);
     }
     return [];
-  }
-
-  private mockQuestion(fields: string[]): string {
-    const parts = fields.map((f) => FIELD_LABELS[f] ?? f);
-    if (parts.length === 0) return "请问还有什么需要补充的吗？";
-    if (parts.length === 1) return `请问您的${parts[0]}是什么？`;
-    const last = parts.pop()!;
-    return `请问您的${parts.join("、")}和${last}分别是什么？`;
   }
 
   private async llmQuestion(
