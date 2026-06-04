@@ -16,7 +16,7 @@ export class WebSearchSource implements TravelDataSource {
   constructor(private readonly logger: Logger) {}
 
   async searchFlights(params: FlightSearchParams): Promise<Flight[]> {
-    const query = `${params.origin} ${params.destination} 机票 ${params.departureDate} 价格 航班号 时刻表`;
+    const query = `${params.origin}到${params.destination}机票价格航班时刻表`;
     return this.searchAndParse<Flight>(query, "flights", (raw) => {
       const d = raw as Record<string, unknown>;
       const flightNo = String(d.flightNo ?? d.flight_no ?? "");
@@ -37,7 +37,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchTrains(params: TrainSearchParams): Promise<Train[]> {
-    const query = `${params.from} ${params.to} 高铁 G次 ${params.date} 时刻表 价格 二等座`;
+    const query = `${params.from}到${params.to}高铁时刻表票价`;
     return this.searchAndParse<Train>(query, "trains", (raw) => {
       const d = raw as Record<string, unknown>;
       const trainNo = String(d.trainNo ?? d.train_no ?? "");
@@ -57,7 +57,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchHotels(params: HotelSearchParams): Promise<Hotel[]> {
-    const query = `${params.city} 酒店 ${params.checkIn} ${params.checkOut} 携程 ${params.maxPricePerNight ? `预算${params.maxPricePerNight}元内` : ""}`;
+    const query = `${params.city}酒店推荐价格${params.maxPricePerNight ? ` ${params.maxPricePerNight}元以内` : ""}`;
     return this.searchAndParse<Hotel>(query, "hotels", (raw) => {
       const d = raw as Record<string, unknown>;
       const name = String(d.name ?? "");
@@ -76,7 +76,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchAttractions(params: AttractionSearchParams): Promise<Activity[]> {
-    const query = `${params.city} ${params.interests?.join(" ") ?? ""} 景点推荐 门票 开放时间`;
+    const query = `${params.city}${params.interests?.join("") ?? ""}景点推荐门票`;
     return this.searchAndParse<Activity>(query, "attractions", (raw) => {
       const d = raw as Record<string, unknown>;
       const name = String(d.name ?? "");
@@ -95,7 +95,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchRestaurants(params: RestaurantSearchParams): Promise<Activity[]> {
-    const query = `${params.city} ${params.mealType === "dinner" ? "晚餐" : params.mealType === "lunch" ? "午餐" : "早餐"} 推荐 美食 人均`;
+    const query = `${params.city}${params.mealType === "dinner" ? "晚餐" : params.mealType === "lunch" ? "午餐" : "早餐"}推荐美食人均消费`;
     return this.searchAndParse<Activity>(query, "restaurants", (raw) => {
       const d = raw as Record<string, unknown>;
       const name = String(d.name ?? "");
