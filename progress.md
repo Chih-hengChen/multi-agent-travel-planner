@@ -20,9 +20,17 @@
 - 前端移除 wizard modal，改为自然语言多轮对话 + 状态进度指示器
 - 保留旧 API（/api/chat/stream, /api/plan）不受影响
 
+### Phase 2: 交通/酒店选择卡片 + SourceResolver (2026-06-04)
+
+- `b755a46` feat: 交通/酒店交互式选择卡片 + SourceResolver 数据源降级链
+- 状态机扩展：SEARCHING_TRANSPORT → SELECTING_TRANSPORT → SEARCHING_HOTELS → SELECTING_HOTEL → SEARCHING
+- SourceResolver：per-source 超时 + fallback 链（Amadeus/Booking/Amap → WebSearch）
+- POST /api/chat/:sid/select 处理交通/酒店选择
+- 前端选择卡片：radio 交通选项 + 酒店卡片，支持重新搜索和回退
+- 信息收集完毕自动触发交通搜索 → 用户选择 → 酒店搜索 → 用户选择 → 行程规划
+
 ## 下一步待办
 
-- Phase 2: 数据源选择卡片（SourceResolver + 前端展示多数据源对比）
 - Phase 3: 行程编辑交互（拖拽、替换、备注）
 - 端到端测试：配置真实 API Key 验证完整流程
 - HotelAgent 无 fallback 后需验证 Booking.com API 可用性

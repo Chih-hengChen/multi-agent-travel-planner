@@ -17,6 +17,7 @@ src/
 │   ├── pipeline.ts            # 主流水线（Preference → Destination → BudgetLoop）
 │   ├── parallel.ts            # 并行执行器（Promise.allSettled）
 │   ├── budget-loop.ts         # 预算调整循环控制器
+│   ├── conversation-orchestrator.ts  # 会话编排（handleMessage + handleSelect）
 │   └── index.ts
 ├── api/                       # HTTP + SSE 接口层
 │   ├── app.ts                 # Fastify 服务工厂
@@ -26,6 +27,14 @@ src/
 │   └── stream-handler.ts      # SSE 聊天主逻辑（agent loop）
 ├── types/
 │   └── index.ts               # Zod Schema + TypeScript 类型
+├── data-sources/              # 数据源层
+│   ├── types.ts               # TravelDataSource 接口 + 搜索参数类型
+│   ├── source-resolver.ts     # 数据源选择器（per-source 超时 + fallback 链）
+│   ├── fallback-data-source.ts # 双源降级包装器
+│   ├── amadeus-source.ts      # Amadeus 航班 API
+│   ├── booking-source.ts      # Booking.com 酒店 API
+│   ├── amap-source.ts         # 高德 POI 搜索
+│   └── web-search-source.ts   # Web Search 通用降级
 ├── config/
 │   └── settings.ts            # 环境变量配置（frozen object）
 ├── cli/
@@ -42,8 +51,9 @@ src/
 浏览器 chat.html
   │  POST /api/chat → { sessionId }
   │  POST /api/chat/:sid (SSE) → { message }
+  │  POST /api/chat/:sid/select (SSE) → { type, outboundId, returnId, hotelId }
   ▼
-ConversationOrchestrator :: handleMessage(sid, msg, emit)
+ConversationOrchestrator :: handleMessage(sid, msg, emit) / handleSelect(sid, req, emit)
   │  load ConversationContext from SessionStore
   ▼
 TurnHandler :: handleTurn(ctx, userMessage)
@@ -57,13 +67,22 @@ TurnHandler :: handleTurn(ctx, userMessage)
   │  3. advanceState(ctx) → 检查字段完整性推进状态
   │     │  INIT → GATHERING_BASICS (有 destination)
   │     │  GATHERING_BASICS → GATHERING_PREFERENCES (basics 齐全)
-  │     │  GATHERING_PREFERENCES → SEARCHING (preferences 齐全 or maxTurns)
+  │     │  GATHERING_PREFERENCES → SEARCHING_TRANSPORT (preferences 齐全 or maxTurns)
   │     ▼
   │  4a. 仍在 GATHERING → GatheringAgent.generateQuestion(ctx)
   │     → SSE: text_delta + question { text, fields }
   │
-  │  4b. 推进到 SEARCHING → toUserPreferences(ctx)
-  │     → TravelPlanningPipeline.run(prefs) → buildPlanSummary(state)
+  │  4b. 推进到 SEARCHING_TRANSPORT → SourceResolver 搜索交通
+  │     → 缓存 transportSearchResult → SELECTING_TRANSPORT
+  │     → SSE: text_delta + transport_options
+  │
+  │  4c. 用户 POST /select { type: transport } → handleSelect()
+  │     → 记录选择 → SEARCHING_HOTELS → SourceResolver 搜索酒店
+  │     → 缓存 hotelOptions → SELECTING_HOTEL
+  │     → SSE: text_delta + hotel_options
+  │
+  │  4d. 用户 POST /select { type: hotel } → handleSelect()
+  │     → 记录选择 → SEARCHING → Pipeline.run(prefs) → buildPlanSummary
   │     → SSE: text_delta + tool_result { plan }
   ▼
 ConversationOrchestrator → emit SSE events → save ctx → SessionStore
@@ -76,6 +95,8 @@ ConversationOrchestrator → emit SSE events → save ctx → SessionStore
 | `text_delta` | `{ text: "..." }` |
 | `state_change` | `{ state: "GATHERING_BASICS" }` |
 | `question` | `{ text, fields: ["startDate", "endDate"] }` |
+| `transport_options` | `{ outbound: TransportOption[], return: TransportOption[] }` |
+| `hotel_options` | `Hotel[]` |
 | `tool_result` | `{ tool: "plan_travel", result: PlanSummary }` |
 | `error` | `{ error: "message", recoverable: true }` |
 | `done` | `{}` |
