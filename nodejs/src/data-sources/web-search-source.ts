@@ -158,9 +158,15 @@ export class WebSearchSource implements TravelDataSource {
         return [];
       }
 
-      const body = await resp.json() as { status: string; data?: SearchResultItem[] };
-      if (body.status === "ok" && Array.isArray(body.data)) {
-        return body.data;
+      const body = await resp.json() as Record<string, unknown>;
+      if (body.status === "ok" && body.data && typeof body.data === "object") {
+        const d = body.data as Record<string, unknown>;
+        if (Array.isArray(d.results)) {
+          return d.results as SearchResultItem[];
+        }
+        if (Array.isArray(body.data)) {
+          return body.data as SearchResultItem[];
+        }
       }
       if (Array.isArray(body)) {
         return body as unknown as SearchResultItem[];
