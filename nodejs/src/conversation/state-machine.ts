@@ -2,6 +2,10 @@ export enum ConversationState {
   INIT = "INIT",
   GATHERING_BASICS = "GATHERING_BASICS",
   GATHERING_PREFERENCES = "GATHERING_PREFERENCES",
+  SEARCHING_TRANSPORT = "SEARCHING_TRANSPORT",
+  SELECTING_TRANSPORT = "SELECTING_TRANSPORT",
+  SEARCHING_HOTELS = "SEARCHING_HOTELS",
+  SELECTING_HOTEL = "SELECTING_HOTEL",
   SEARCHING = "SEARCHING",
   COMPLETED = "COMPLETED",
   ERROR = "ERROR",
@@ -15,7 +19,24 @@ const TRANSITIONS: Record<ConversationState, ConversationState[]> = {
   ],
   [ConversationState.GATHERING_PREFERENCES]: [
     ConversationState.GATHERING_PREFERENCES,
+    ConversationState.SEARCHING_TRANSPORT,
+  ],
+  [ConversationState.SEARCHING_TRANSPORT]: [
+    ConversationState.SELECTING_TRANSPORT,
+    ConversationState.ERROR,
+  ],
+  [ConversationState.SELECTING_TRANSPORT]: [
+    ConversationState.SEARCHING_HOTELS,
+    ConversationState.SEARCHING_TRANSPORT,
+  ],
+  [ConversationState.SEARCHING_HOTELS]: [
+    ConversationState.SELECTING_HOTEL,
+    ConversationState.ERROR,
+  ],
+  [ConversationState.SELECTING_HOTEL]: [
     ConversationState.SEARCHING,
+    ConversationState.SEARCHING_HOTELS,
+    ConversationState.SELECTING_TRANSPORT,
   ],
   [ConversationState.SEARCHING]: [
     ConversationState.COMPLETED,
@@ -25,6 +46,8 @@ const TRANSITIONS: Record<ConversationState, ConversationState[]> = {
   [ConversationState.ERROR]: [
     ConversationState.GATHERING_BASICS,
     ConversationState.GATHERING_PREFERENCES,
+    ConversationState.SEARCHING_TRANSPORT,
+    ConversationState.SEARCHING_HOTELS,
     ConversationState.SEARCHING,
   ],
 };
@@ -67,7 +90,7 @@ export function advanceState(
     ctx.travelInterests?.length;
 
   if (preferencesComplete || ctx.turnCount >= maxGatheringTurns) {
-    return ConversationState.SEARCHING;
+    return ConversationState.SEARCHING_TRANSPORT;
   }
 
   return ConversationState.GATHERING_PREFERENCES;

@@ -18,4 +18,7 @@ export const settings = Object.freeze({
   SESSION_TTL_MS: parseInt(process.env.SESSION_TTL_MS ?? "7200000", 10),
   MAX_CONVERSATION_TURNS: parseInt(process.env.MAX_CONVERSATION_TURNS ?? "20", 10),
   MAX_GATHERING_TURNS: parseInt(process.env.MAX_GATHERING_TURNS ?? "6", 10),
+  SEARCH_TIMEOUT_MS: parseInt(process.env.SEARCH_TIMEOUT_MS ?? "10000", 10),
+  MAX_TRANSPORT_OPTIONS: parseInt(process.env.MAX_TRANSPORT_OPTIONS ?? "4", 10),
+  MAX_HOTEL_OPTIONS: parseInt(process.env.MAX_HOTEL_OPTIONS ?? "3", 10),
 });

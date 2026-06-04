@@ -1,5 +1,26 @@
 import { ConversationState } from "./state-machine.js";
-import { TravelStyle, type UserPreferences, type PlanSummary, type TravelPlanState } from "../types/index.js";
+import { TravelStyle, type UserPreferences, type PlanSummary, type TravelPlanState, type Hotel } from "../types/index.js";
+
+export interface TransportOption {
+  id: string;
+  mode: "train" | "flight";
+  trainNo?: string;
+  flightNo?: string;
+  airline?: string;
+  departStation: string;
+  arriveStation: string;
+  departTime: string;
+  arriveTime: string;
+  duration: string;
+  price: number;
+  note?: string;
+  isRecommended: boolean;
+}
+
+export interface TransportSearchResult {
+  outbound: TransportOption[];
+  return: TransportOption[];
+}
 
 export interface ConversationContext {
   sessionId: string;
@@ -27,6 +48,16 @@ export interface ConversationContext {
   foodPreferences?: string[];
   transportPreference?: string;
   specialRequests?: string;
+
+  transportSearchResult?: TransportSearchResult;
+  hotelOptions?: Hotel[];
+
+  selectedOutboundId?: string;
+  selectedReturnId?: string;
+  selectedHotelId?: string;
+  selectedHotelName?: string;
+
+  planSummary?: PlanSummary;
 
   messageHistory: Array<{ role: "user" | "assistant"; content: string }>;
   turnCount: number;

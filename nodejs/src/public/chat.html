@@ -83,6 +83,10 @@ const STATE_LABELS = {
   INIT: { text: '等待中', color: 'bg-gray-200 text-gray-600' },
   GATHERING_BASICS: { text: '了解基本信息', color: 'bg-blue-100 text-blue-700' },
   GATHERING_PREFERENCES: { text: '收集偏好', color: 'bg-purple-100 text-purple-700' },
+  SEARCHING_TRANSPORT: { text: '搜索交通', color: 'bg-amber-100 text-amber-700 pulse' },
+  SELECTING_TRANSPORT: { text: '选择交通', color: 'bg-cyan-100 text-cyan-700' },
+  SEARCHING_HOTELS: { text: '搜索酒店', color: 'bg-amber-100 text-amber-700 pulse' },
+  SELECTING_HOTEL: { text: '选择酒店', color: 'bg-teal-100 text-teal-700' },
   SEARCHING: { text: '正在规划行程', color: 'bg-amber-100 text-amber-700 pulse' },
   COMPLETED: { text: '规划完成', color: 'bg-green-100 text-green-700' },
   ERROR: { text: '出错了', color: 'bg-red-100 text-red-700' },
@@ -90,9 +94,13 @@ const STATE_LABELS = {
 
 const STATE_PROGRESS = {
   INIT: 0,
-  GATHERING_BASICS: 20,
-  GATHERING_PREFERENCES: 45,
-  SEARCHING: 70,
+  GATHERING_BASICS: 15,
+  GATHERING_PREFERENCES: 30,
+  SEARCHING_TRANSPORT: 40,
+  SELECTING_TRANSPORT: 50,
+  SEARCHING_HOTELS: 60,
+  SELECTING_HOTEL: 70,
+  SEARCHING: 85,
   COMPLETED: 100,
   ERROR: 0,
 };
@@ -246,6 +254,193 @@ function renderDataSources(plan) {
   return html;
 }
 
+function renderTransportCard(data) {
+  const outbound = data.outbound || [];
+  const ret = data.return || [];
+  if (!outbound.length && !ret.length) return '<div class="text-xs text-gray-400 mt-2">未找到可用交通</div>';
+
+  let html = '<div class="plan-card mt-2"><h3>🚄 请选择交通方式</h3>';
+
+  if (outbound.length) {
+    html += '<div class="text-xs font-semibold text-blue-700 mb-1 mt-2">去程</div>';
+    html += '<div class="space-y-1.5">';
+    outbound.forEach((opt, i) => {
+      const icon = opt.mode === 'train' ? '🚄' : '✈️';
+      const rec = opt.isRecommended ? '<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">推荐</span>' : '';
+      html += `<label class="flex items-center gap-2 bg-white rounded-lg p-2 border cursor-pointer hover:border-blue-400 transition text-xs">
+        <input type="radio" name="outbound" value="${esc(opt.id)}" ${i === 0 ? 'checked' : ''} class="accent-blue-600">
+        <span class="flex-1">${icon} ${esc(opt.trainNo || opt.flightNo || '')} ${esc(opt.departStation)}→${esc(opt.arriveStation)} ${esc(opt.departTime)}-${esc(opt.arriveTime)} ${esc(opt.duration)} ${esc(opt.note || '')}</span>
+        <span class="font-semibold text-blue-600">¥${opt.price}</span>
+        ${rec}
+      </label>`;
+    });
+    html += '</div>';
+  }
+
+  if (ret.length) {
+    html += '<div class="text-xs font-semibold text-blue-700 mb-1 mt-3">返程</div>';
+    html += '<div class="space-y-1.5">';
+    ret.forEach((opt, i) => {
+      const icon = opt.mode === 'train' ? '🚄' : '✈️';
+      const rec = opt.isRecommended ? '<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">推荐</span>' : '';
+      html += `<label class="flex items-center gap-2 bg-white rounded-lg p-2 border cursor-pointer hover:border-blue-400 transition text-xs">
+        <input type="radio" name="return" value="${esc(opt.id)}" ${i === 0 ? 'checked' : ''} class="accent-blue-600">
+        <span class="flex-1">${icon} ${esc(opt.trainNo || opt.flightNo || '')} ${esc(opt.departStation)}→${esc(opt.arriveStation)} ${esc(opt.departTime)}-${esc(opt.arriveTime)} ${esc(opt.duration)} ${esc(opt.note || '')}</span>
+        <span class="font-semibold text-blue-600">¥${opt.price}</span>
+        ${rec}
+      </label>`;
+    });
+    html += '</div>';
+  }
+
+  html += `<div class="flex gap-2 mt-4">
+    <button onclick="confirmTransport(this)" class="flex-1 bg-blue-600 text-white text-sm py-2 rounded-lg hover:bg-blue-700 transition font-medium">确认选择</button>
+    <button onclick="rescanTransport(this)" class="text-sm text-gray-500 border rounded-lg px-4 py-2 hover:text-blue-600 transition">重新搜索</button>
+  </div>`;
+  html += '</div>';
+  return html;
+}
+
+function renderHotelCard(hotels) {
+  if (!hotels?.length) return '<div class="text-xs text-gray-400 mt-2">未找到可用酒店</div>';
+
+  let html = '<div class="plan-card mt-2"><h3>🏨 请选择酒店</h3>';
+  html += '<div class="space-y-2">';
+
+  hotels.forEach((h, i) => {
+    const stars = '⭐'.repeat(Math.min(Math.round(h.starRating), 5));
+    const isFirst = i === 0;
+    html += `<div class="bg-white rounded-lg p-3 border ${isFirst ? 'border-green-400' : ''} cursor-pointer hover:border-teal-400 transition" onclick="selectHotel(this, '${esc(h.name)}')">
+      <div class="flex justify-between items-start">
+        <div>
+          <div class="font-semibold text-sm">${esc(h.name)} ${isFirst ? '<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">推荐</span>' : ''}</div>
+          <div class="text-xs text-gray-400 mt-0.5">${stars} ${h.userRating?.toFixed(1) || ''} · ${h.distanceToCenterKm ? h.distanceToCenterKm + 'km to center' : ''}</div>
+          ${h.address ? `<div class="text-xs text-gray-400">${esc(h.address)}</div>` : ''}
+        </div>
+        <div class="text-right">
+          <div class="font-bold text-green-600">¥${h.pricePerNight}<span class="text-xs font-normal text-gray-400">/晚</span></div>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  html += '</div>';
+  html += `<div class="flex gap-2 mt-3">
+    <button onclick="goBackToTransport(this)" class="text-sm text-gray-500 border rounded-lg px-4 py-2 hover:text-blue-600 transition">更换交通</button>
+  </div>`;
+  html += '</div>';
+  return html;
+}
+
+async function confirmTransport(btn) {
+  const card = btn.closest('.plan-card');
+  const outboundRadio = card.querySelector('input[name="outbound"]:checked');
+  const returnRadio = card.querySelector('input[name="return"]:checked');
+  if (!outboundRadio || !returnRadio) {
+    alert('请同时选择去程和返程交通');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  const botBubble = createBotBubble();
+  await postSelect({
+    type: 'transport',
+    outboundId: outboundRadio.value,
+    returnId: returnRadio.value,
+  }, botBubble);
+}
+
+async function rescanTransport(btn) {
+  btn.disabled = true;
+  const botBubble = createBotBubble();
+  await postSelect({ type: 'transport', action: 'rescan' }, botBubble);
+}
+
+async function selectHotel(el, hotelName) {
+  const card = el.closest('.plan-card');
+  card.querySelectorAll('div[onclick]').forEach(d => d.style.opacity = '0.5');
+  el.style.opacity = '1';
+  el.style.border = '2px solid #14b8a6';
+
+  const botBubble = createBotBubble();
+  await postSelect({ type: 'hotel', hotelId: hotelName }, botBubble);
+}
+
+async function goBackToTransport(btn) {
+  btn.disabled = true;
+  const botBubble = createBotBubble();
+  await postSelect({ type: 'transport', action: 'rescan' }, botBubble);
+}
+
+async function postSelect(body, botBubble) {
+  let fullText = '';
+  let planData = null;
+
+  try {
+    const resp = await fetch(`/api/chat/${sessionId}/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      finalizeBotBubble(botBubble, `❌ 选择失败: ${err.error || resp.status}`, null);
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let currentEvent = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (currentEvent === 'text_delta') {
+              fullText += data.text;
+              botBubble.innerHTML = marked.parse(fullText);
+              scrollBottom();
+            } else if (currentEvent === 'state_change') {
+              updateStateUI(data.state);
+            } else if (currentEvent === 'transport_options') {
+              botBubble.classList.remove('typing');
+              botBubble.innerHTML = marked.parse(fullText) + renderTransportCard(data);
+              scrollBottom();
+            } else if (currentEvent === 'hotel_options') {
+              botBubble.classList.remove('typing');
+              botBubble.innerHTML = marked.parse(fullText) + renderHotelCard(data);
+              scrollBottom();
+            } else if (currentEvent === 'tool_result') {
+              if (data.tool === 'plan_travel') planData = data.result;
+            } else if (currentEvent === 'error') {
+              fullText += `\n\n❌ 错误: ${data.error}`;
+            }
+          } catch {}
+          currentEvent = '';
+        }
+      }
+    }
+
+    const planCardHtml = planData ? renderPlanCard(planData) : '';
+    finalizeBotBubble(botBubble, fullText, planCardHtml);
+  } catch (err) {
+    finalizeBotBubble(botBubble, '网络错误，请重试', null);
+  }
+}
+
 async function ensureSession() {
   if (sessionId) {
     try {
@@ -271,6 +466,7 @@ async function ensureSession() {
 async function streamConversation(text, botBubble) {
   let fullText = '';
   let planData = null;
+  let extraHtml = '';
 
   const resp = await fetch(`/api/chat/${sessionId}`, {
     method: 'POST',
@@ -310,12 +506,20 @@ async function streamConversation(text, botBubble) {
           const data = JSON.parse(line.slice(6));
           if (currentEvent === 'text_delta') {
             fullText += data.text;
-            botBubble.innerHTML = marked.parse(fullText);
+            botBubble.innerHTML = marked.parse(fullText) + extraHtml;
             scrollBottom();
           } else if (currentEvent === 'state_change') {
             updateStateUI(data.state);
           } else if (currentEvent === 'question') {
             // question is already shown via text_delta
+          } else if (currentEvent === 'transport_options') {
+            extraHtml = renderTransportCard(data);
+            botBubble.innerHTML = marked.parse(fullText) + extraHtml;
+            scrollBottom();
+          } else if (currentEvent === 'hotel_options') {
+            extraHtml = renderHotelCard(data);
+            botBubble.innerHTML = marked.parse(fullText) + extraHtml;
+            scrollBottom();
           } else if (currentEvent === 'tool_result') {
             if (data.tool === 'plan_travel') planData = data.result;
           } else if (currentEvent === 'error') {
@@ -329,7 +533,7 @@ async function streamConversation(text, botBubble) {
   }
 
   const planCardHtml = planData ? renderPlanCard(planData) : '';
-  finalizeBotBubble(botBubble, fullText, planCardHtml);
+  finalizeBotBubble(botBubble, fullText, extraHtml || planCardHtml);
   return { fullText, planData };
 }
 

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { SessionStore } from "../conversation/session-store.js";
-import type { TurnHandler, TurnResult } from "../conversation/turn-handler.js";
+import type { TurnHandler, TurnResult, SelectRequest } from "../conversation/turn-handler.js";
 import {
   type ConversationContext,
   createDefaultContext,
@@ -49,6 +49,58 @@ export class ConversationOrchestrator {
         text: result.replyText,
         fields: result.questionFields,
       });
+    }
+
+    if (result.transportOptions) {
+      emit("transport_options", result.transportOptions);
+    }
+
+    if (result.hotelOptions) {
+      emit("hotel_options", result.hotelOptions);
+    }
+
+    if (result.planResult) {
+      emit("tool_result", { tool: "plan_travel", result: result.planResult });
+    }
+
+    if (result.error) {
+      emit("error", { error: result.error, recoverable: true });
+    }
+
+    ctx.state = result.newState;
+    ctx.version++;
+    ctx.updatedAt = Date.now();
+    await this.sessionStore.set(sessionId, ctx);
+    await this.sessionStore.refreshTtl(sessionId);
+  }
+
+  async handleSelect(
+    sessionId: string,
+    request: SelectRequest,
+    emit: (event: string, data: unknown) => void,
+  ): Promise<void> {
+    const ctx = await this.sessionStore.get(sessionId);
+    if (!ctx) {
+      emit("error", { error: "Session not found", recoverable: false });
+      return;
+    }
+
+    const result: TurnResult = await this.turnHandler.handleSelect(ctx, request);
+
+    if (result.newState !== ctx.state) {
+      emit("state_change", { state: result.newState });
+    }
+
+    if (result.replyText) {
+      emit("text_delta", { text: result.replyText });
+    }
+
+    if (result.transportOptions) {
+      emit("transport_options", result.transportOptions);
+    }
+
+    if (result.hotelOptions) {
+      emit("hotel_options", result.hotelOptions);
     }
 
     if (result.planResult) {

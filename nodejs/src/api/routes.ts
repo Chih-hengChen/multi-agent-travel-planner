@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { TravelStyle, PlanRequestSchema, type PlanSummary, type UserPreferences } from "../types/index.js";
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
-import { handleChatStream, handleConversationMessage } from "./stream-handler.js";
+import { handleChatStream, handleConversationMessage, handleSelectMessage } from "./stream-handler.js";
 import { createSessionStore } from "../conversation/session-store.js";
 import { InfoExtractor } from "../conversation/info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
@@ -136,6 +136,10 @@ export function registerRoutes(app: FastifyInstance) {
 
   app.post("/api/chat/:sid", async (request, reply) => {
     await handleConversationMessage(request as any, reply, orchestrator);
+  });
+
+  app.post("/api/chat/:sid/select", async (request, reply) => {
+    await handleSelectMessage(request as any, reply, orchestrator);
   });
 
   app.get("/api/chat/:sid/state", async (request, reply) => {
