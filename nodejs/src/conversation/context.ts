@@ -88,7 +88,7 @@ export function mergeExtracted(
   ctx: ConversationContext,
   extracted: ExtractedFields,
 ): ConversationContext {
-  const merged = { ...ctx, version: ctx.version + 1, updatedAt: Date.now() };
+  const merged = { ...ctx, updatedAt: Date.now() };
 
   for (const [key, value] of Object.entries(extracted)) {
     if (value === undefined || value === null) continue;
