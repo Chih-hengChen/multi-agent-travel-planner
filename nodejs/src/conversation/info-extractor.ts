@@ -45,13 +45,14 @@ export class InfoExtractor {
       .map((m) => `${m.role === "user" ? "用户" : "助手"}: ${m.content}`)
       .join("\n");
 
-    const currentYear = new Date().getFullYear();
+    const today = new Date();
+    const currentDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
     const prompt = infoExtractPrompt.build({
       knownFields: nonEmptyKnown,
       history: formattedHistory,
       userMessage,
-      currentYear,
+      currentDate,
     });
 
     const raw = await this.callLlm(prompt);

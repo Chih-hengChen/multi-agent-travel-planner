@@ -1,14 +1,15 @@
-export const VERSION = "1.0.0";
+export const VERSION = "1.1.0";
 export const TIER = "light" as const;
 
 export function build(params: {
   knownFields: Record<string, unknown>;
   history: string;
   userMessage: string;
-  currentYear: number;
+  currentDate: string;
 }): string {
   return `你是一个旅行信息提取助手。从用户的消息中提取旅行相关信息，以JSON格式返回。
 
+今天是 ${params.currentDate}（星期${getWeekday(params.currentDate)}）。
 已收集信息：${JSON.stringify(params.knownFields)}
 对话历史（最近5条）：
 ${params.history}
@@ -31,8 +32,13 @@ ${params.history}
 }
 
 规则：
-- 日期格式 YYYY-MM-DD，年份默认为${params.currentYear}
-- 支持相对日期："下周一"/"下周五"等中文星期，"明天"/"后天"等，请转换为具体日期
+- 日期格式 YYYY-MM-DD
+- **必须根据今天的日期 ${params.currentDate} 来计算相对日期**
+- "今天" = ${params.currentDate}
+- "明天" = 今天+1天，"后天" = 今天+2天
+- "下周X" = 从今天算起的下一个星期X（如果今天就是星期X，则指下下个星期X）
+- "本周X"/"这周X" = 本周的星期X（如果已过则指下周）
+- "X号"/"X日" = 当月或下个月的X号
 - "X个人"/"X人" -> numTravelers: X
 - "X块钱"/"X元"/"预算X" -> budget: X
 - "舒适"/"舒适型" -> accommodationStyle: "comfort"
@@ -47,4 +53,9 @@ ${params.history}
 - "随便"/"都行"/"都可以" -> transportPreference: "no_preference"
 - 只返回有把握的字段，不要猜测
 - 返回纯JSON，不要有其他文字`;
+}
+
+function getWeekday(dateStr: string): string {
+  const days = ["日", "一", "二", "三", "四", "五", "六"];
+  return days[new Date(dateStr).getDay()];
 }
