@@ -42,6 +42,9 @@ ${params.history}
 - "美食"/"吃货" -> travelInterests 中加入 "美食"
 - "自然"/"风景" -> travelInterests 中加入 "自然风光"
 - "购物" -> travelInterests 中加入 "购物"
+- "高铁"/"动车"/"火车" -> transportPreference: "high_speed_rail"
+- "飞机"/"航班"/"机票" -> transportPreference: "flight"
+- "随便"/"都行"/"都可以" -> transportPreference: "no_preference"
 - 只返回有把握的字段，不要猜测
 - 返回纯JSON，不要有其他文字`;
 }

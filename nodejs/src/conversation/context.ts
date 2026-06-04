@@ -80,8 +80,8 @@ export interface ExtractedFields {
 
 export const FIELD_GROUPS = {
   basics: ["destination", "departureCity", "startDate", "endDate", "numTravelers"] as const,
-  preferences: ["budget", "accommodationStyle", "travelInterests"] as const,
-  nice: ["foodPreferences", "transportPreference"] as const,
+  preferences: ["budget", "accommodationStyle", "travelInterests", "transportPreference"] as const,
+  nice: ["foodPreferences"] as const,
 } as const;
 
 export function createDefaultContext(sessionId: string): ConversationContext {

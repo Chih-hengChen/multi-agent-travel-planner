@@ -13,6 +13,7 @@ const FIELD_LABELS: Record<string, string> = {
   budget: "旅行预算",
   accommodationStyle: "住宿偏好",
   travelInterests: "感兴趣的游玩类型",
+  transportPreference: "交通方式偏好（高铁/飞机/不限）",
 };
 
 export class GatheringAgent {
