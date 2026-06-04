@@ -106,3 +106,32 @@ ${params.searchContext}
 
 请从以上所有信息中提取${params.kind}信息，严格按照指定字段名返回JSON数组。百科信息中的知名景点优先提取。`;
 }
+
+export function buildFallbackPrompt(params: { query: string; kind: string }): string {
+  const spec = FIELD_SPECS[params.kind] ?? "";
+  const example = EXAMPLES[params.kind];
+
+  let prompt = `你是旅行数据助手。网络搜索未能找到${params.kind}相关数据。请根据你对${params.query}这条线路的了解，提供常见的${params.kind}信息。
+只返回JSON数组，不要其他文字。数据应基于真实常见的${params.kind}信息，价格和时间应合理。
+
+返回格式：
+${spec}
+
+规则：
+1. 价格必须是数字，参考常见${params.kind}票价
+2. 时间格式为 HH:MM
+3. 字段名必须与上面格式完全一致
+4. 提供3-5条常见数据`;
+
+  if (example) {
+    prompt += `
+
+参考格式示例：
+输入：${example.input}
+
+输出：
+${example.output}`;
+  }
+
+  return prompt;
+}

@@ -21,6 +21,11 @@ const TOURISM_KEYWORDS = [
   "5A", "4A", "AAAA", "网红", "打卡",
 ];
 
+const RELEVANCE_KEYWORDS: Record<string, string[]> = {
+  trains: ["高铁", "动车", "车次", "列车", "火车", "时刻表", "二等座", "G", "D"],
+  flights: ["航班", "机票", "航空", "起飞", "降落", "CA", "MU", "CZ", "HU"],
+};
+
 export class WebSearchSource implements TravelDataSource {
   constructor(private readonly logger: Logger) {}
 
@@ -46,23 +51,55 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchTrains(params: TrainSearchParams): Promise<Train[]> {
-    const query = `${params.from}到${params.to}高铁时刻表票价`;
-    return this.searchAndParse<Train>(query, "trains", (raw) => {
-      const d = raw as Record<string, unknown>;
-      const trainNo = String(d.trainNo ?? d.train_no ?? "");
-      if (!trainNo) return null;
-      return {
-        trainNo,
-        trainType: String(d.trainType ?? d.train_type ?? "高铁"),
-        departureCity: String(d.departureCity ?? d.departure_city ?? params.from),
-        arrivalCity: String(d.arrivalCity ?? d.arrival_city ?? params.to),
-        departureTime: String(d.departureTime ?? d.departure_time ?? ""),
-        arrivalTime: String(d.arrivalTime ?? d.arrival_time ?? ""),
-        price: Number(d.price ?? 0) || 0,
-        durationHours: Number(d.durationHours ?? d.duration_hours ?? 3) || 3,
-        seatType: String(d.seatType ?? d.seat_type ?? "二等座"),
-      };
-    });
+    const queries = [
+      `${params.from}到${params.to}高铁票车次查询`,
+      `${params.from}到${params.to}火车时刻表`,
+      `${params.from} ${params.to} 高铁 G车次`,
+    ];
+
+    for (const query of queries) {
+      const results = await this.searchAndParse<Train>(query, "trains", (raw) => {
+        const d = raw as Record<string, unknown>;
+        const trainNo = String(d.trainNo ?? d.train_no ?? "");
+        if (!trainNo) return null;
+        return {
+          trainNo,
+          trainType: String(d.trainType ?? d.train_type ?? "高铁"),
+          departureCity: String(d.departureCity ?? d.departure_city ?? params.from),
+          arrivalCity: String(d.arrivalCity ?? d.arrival_city ?? params.to),
+          departureTime: String(d.departureTime ?? d.departure_time ?? ""),
+          arrivalTime: String(d.arrivalTime ?? d.arrival_time ?? ""),
+          price: Number(d.price ?? 0) || 0,
+          durationHours: Number(d.durationHours ?? d.duration_hours ?? 3) || 3,
+          seatType: String(d.seatType ?? d.seat_type ?? "二等座"),
+        };
+      });
+      if (results.length > 0) return results;
+      this.logger.info({ query: query.substring(0, 50) }, "web-search: train query retry");
+    }
+
+    this.logger.info({ from: params.from, to: params.to }, "web-search: all train queries failed, using LLM knowledge");
+    return this.searchAndParse<Train>(
+      `${params.from}到${params.to}高铁`,
+      "trains",
+      (raw) => {
+        const d = raw as Record<string, unknown>;
+        const trainNo = String(d.trainNo ?? d.train_no ?? "");
+        if (!trainNo) return null;
+        return {
+          trainNo,
+          trainType: String(d.trainType ?? d.train_type ?? "高铁"),
+          departureCity: String(d.departureCity ?? d.departure_city ?? params.from),
+          arrivalCity: String(d.arrivalCity ?? d.arrival_city ?? params.to),
+          departureTime: String(d.departureTime ?? d.departure_time ?? ""),
+          arrivalTime: String(d.arrivalTime ?? d.arrival_time ?? ""),
+          price: Number(d.price ?? 0) || 0,
+          durationHours: Number(d.durationHours ?? d.duration_hours ?? 3) || 3,
+          seatType: String(d.seatType ?? d.seat_type ?? "二等座"),
+        };
+      },
+      { allowLlmFallback: true },
+    );
   }
 
   async searchHotels(params: HotelSearchParams): Promise<Hotel[]> {
@@ -124,11 +161,14 @@ export class WebSearchSource implements TravelDataSource {
     }, { cityKnowledge });
   }
 
-  private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null, opts?: { cityKnowledge?: string }): Promise<T[]> {
+  private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null, opts?: { cityKnowledge?: string; allowLlmFallback?: boolean }): Promise<T[]> {
     try {
       const searchResults = await this.searchWeb(query);
       if (searchResults.length === 0) {
         this.logger.info({ kind, query: query.substring(0, 50) }, "web-search: no results from daemon");
+        if (opts?.allowLlmFallback) {
+          return this.llmFallbackExtract(query, kind, mapper);
+        }
         return [];
       }
 
@@ -137,10 +177,21 @@ export class WebSearchSource implements TravelDataSource {
 
       this.logger.info({ kind, searchResults: searchResults.length, ctxLen: searchContext.length, ctxSample: searchContext.substring(0, 300) }, "web-search: context");
 
+      if (!this.isRelevant(searchContext, kind)) {
+        this.logger.info({ kind, query: query.substring(0, 50) }, "web-search: results irrelevant");
+        if (opts?.allowLlmFallback) {
+          return this.llmFallbackExtract(query, kind, mapper);
+        }
+        return [];
+      }
+
       const llmResponse = await this.extractWithLlm(searchContext, query, kind, opts?.cityKnowledge);
       const json = this.extractJson(llmResponse);
       if (!Array.isArray(json)) {
         this.logger.warn({ kind, text: llmResponse.substring(0, 200) }, "web-search: LLM extraction returned no valid JSON");
+        if (opts?.allowLlmFallback) {
+          return this.llmFallbackExtract(query, kind, mapper);
+        }
         return [];
       }
 
@@ -159,6 +210,28 @@ export class WebSearchSource implements TravelDataSource {
       this.logger.warn({ err: err instanceof Error ? err.message : String(err), kind }, "web-search: failed");
       return [];
     }
+  }
+
+  private isRelevant(searchContext: string, kind: string): boolean {
+    const keywords = RELEVANCE_KEYWORDS[kind];
+    if (!keywords) return true;
+    return keywords.some(kw => searchContext.includes(kw));
+  }
+
+  private async llmFallbackExtract<T>(query: string, kind: string, mapper: (raw: unknown) => T | null): Promise<T[]> {
+    this.logger.info({ kind, query: query.substring(0, 50) }, "web-search: using LLM knowledge fallback");
+    const prompt = webSearchPrompt.buildFallbackPrompt({ query, kind });
+    const llmResponse = await this.extractWithLlm("", query, kind, undefined, prompt);
+    const json = this.extractJson(llmResponse);
+    if (!Array.isArray(json)) return [];
+
+    const results: T[] = [];
+    for (const item of json) {
+      const mapped = mapper(item);
+      if (mapped) results.push(mapped);
+    }
+    this.logger.info({ kind, results: results.length, source: "llm-fallback" }, "web-search: parsed");
+    return results;
   }
 
   private async searchWeb(query: string): Promise<SearchResultItem[]> {
@@ -247,8 +320,8 @@ export class WebSearchSource implements TravelDataSource {
     return parts.join("\n\n");
   }
 
-  private async extractWithLlm(searchContext: string, query: string, kind: string, cityKnowledge?: string): Promise<string> {
-    const prompt = webSearchPrompt.buildUserPrompt({ query, kind, searchContext, cityKnowledge });
+  private async extractWithLlm(searchContext: string, query: string, kind: string, cityKnowledge?: string, customPrompt?: string): Promise<string> {
+    const prompt = customPrompt ?? webSearchPrompt.buildUserPrompt({ query, kind, searchContext, cityKnowledge });
     const systemPrompt = webSearchPrompt.buildSystemPrompt({ kind });
 
     const body: Record<string, unknown> = {
