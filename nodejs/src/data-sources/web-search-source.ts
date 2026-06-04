@@ -124,6 +124,8 @@ export class WebSearchSource implements TravelDataSource {
       const contents = await this.fetchWebContent(searchResults, 3);
       const searchContext = this.formatSearchResults(searchResults, contents);
 
+      this.logger.info({ kind, searchResults: searchResults.length, ctxLen: searchContext.length, ctxSample: searchContext.substring(0, 300) }, "web-search: context");
+
       const llmResponse = await this.extractWithLlm(searchContext, query, kind);
       const json = this.extractJson(llmResponse);
       if (!Array.isArray(json)) {
