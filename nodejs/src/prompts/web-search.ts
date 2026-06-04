@@ -1,4 +1,4 @@
-export const VERSION = "2.2.0";
+export const VERSION = "2.3.0";
 export const TIER = "heavy" as const;
 
 const FIELD_SPECS: Record<string, string> = {
@@ -93,12 +93,16 @@ ${example.output}`;
   return prompt;
 }
 
-export function buildUserPrompt(params: { query: string; kind: string; searchContext: string }): string {
-  return `查询：${params.query}
+export function buildUserPrompt(params: { query: string; kind: string; searchContext: string; cityKnowledge?: string }): string {
+  const knowledgeBlock = params.cityKnowledge
+    ? `\n以下是该城市的百科旅游参考信息（知名度高的景点推荐）：\n${params.cityKnowledge}\n`
+    : "";
 
+  return `查询：${params.query}
+${knowledgeBlock}
 以下是真实的网页搜索结果：
 
 ${params.searchContext}
 
-请从以上搜索结果中提取${params.kind}信息，严格按照指定字段名返回JSON数组。`;
+请从以上所有信息中提取${params.kind}信息，严格按照指定字段名返回JSON数组。百科信息中的知名景点优先提取。`;
 }

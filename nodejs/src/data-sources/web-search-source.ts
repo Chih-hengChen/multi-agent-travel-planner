@@ -12,6 +12,15 @@ interface SearchResultItem {
   engine?: string;
 }
 
+const cityKnowledgeCache = new Map<string, { content: string; fetchedAt: number }>();
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
+const TOURISM_KEYWORDS = [
+  "景点", "名胜", "旅游", "古迹", "博物馆", "公园", "寺", "庙", "宫",
+  "园", "陵", "楼", "塔", "故居", "纪念", "风景", "世界遗产", "文化遗产",
+  "5A", "4A", "AAAA", "网红", "打卡",
+];
+
 export class WebSearchSource implements TravelDataSource {
   constructor(private readonly logger: Logger) {}
 
@@ -76,6 +85,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   async searchAttractions(params: AttractionSearchParams): Promise<Activity[]> {
+    const cityKnowledge = await this.getCityKnowledge(params.city);
     const query = `${params.city}${params.interests?.join("") ?? ""}景点推荐门票`;
     return this.searchAndParse<Activity>(query, "attractions", (raw) => {
       const d = raw as Record<string, unknown>;
@@ -91,10 +101,11 @@ export class WebSearchSource implements TravelDataSource {
         description: "",
         timeSlot: "",
       };
-    });
+    }, { cityKnowledge });
   }
 
   async searchRestaurants(params: RestaurantSearchParams): Promise<Activity[]> {
+    const cityKnowledge = await this.getCityKnowledge(params.city);
     const query = `${params.city}${params.mealType === "dinner" ? "晚餐" : params.mealType === "lunch" ? "午餐" : "早餐"}推荐美食人均消费`;
     return this.searchAndParse<Activity>(query, "restaurants", (raw) => {
       const d = raw as Record<string, unknown>;
@@ -110,10 +121,10 @@ export class WebSearchSource implements TravelDataSource {
         description: String(d.cuisine ?? ""),
         timeSlot: params.mealType === "breakfast" ? "morning" : params.mealType === "lunch" ? "afternoon" : "evening",
       };
-    });
+    }, { cityKnowledge });
   }
 
-  private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null): Promise<T[]> {
+  private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null, opts?: { cityKnowledge?: string }): Promise<T[]> {
     try {
       const searchResults = await this.searchWeb(query);
       if (searchResults.length === 0) {
@@ -126,7 +137,7 @@ export class WebSearchSource implements TravelDataSource {
 
       this.logger.info({ kind, searchResults: searchResults.length, ctxLen: searchContext.length, ctxSample: searchContext.substring(0, 300) }, "web-search: context");
 
-      const llmResponse = await this.extractWithLlm(searchContext, query, kind);
+      const llmResponse = await this.extractWithLlm(searchContext, query, kind, opts?.cityKnowledge);
       const json = this.extractJson(llmResponse);
       if (!Array.isArray(json)) {
         this.logger.warn({ kind, text: llmResponse.substring(0, 200) }, "web-search: LLM extraction returned no valid JSON");
@@ -236,8 +247,8 @@ export class WebSearchSource implements TravelDataSource {
     return parts.join("\n\n");
   }
 
-  private async extractWithLlm(searchContext: string, query: string, kind: string): Promise<string> {
-    const prompt = webSearchPrompt.buildUserPrompt({ query, kind, searchContext });
+  private async extractWithLlm(searchContext: string, query: string, kind: string, cityKnowledge?: string): Promise<string> {
+    const prompt = webSearchPrompt.buildUserPrompt({ query, kind, searchContext, cityKnowledge });
     const systemPrompt = webSearchPrompt.buildSystemPrompt({ kind });
 
     const body: Record<string, unknown> = {
@@ -281,6 +292,61 @@ export class WebSearchSource implements TravelDataSource {
     return isAnthropic
       ? data.content?.[0]?.text ?? ""
       : data.choices?.[0]?.message?.content ?? "";
+  }
+
+  private async getCityKnowledge(city: string): Promise<string> {
+    const cached = cityKnowledgeCache.get(city);
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+      this.logger.info({ city, source: "cached" }, "city-knowledge: hit");
+      return cached.content;
+    }
+
+    try {
+      const results = await this.searchWeb(`${city}旅游百科`);
+      if (results.length === 0) {
+        this.logger.info({ city }, "city-knowledge: no search results");
+        cityKnowledgeCache.set(city, { content: "", fetchedAt: Date.now() });
+        return "";
+      }
+
+      const baikeItem = results.find(r =>
+        /baike|wiki|百科|wenwen|zhidao/.test(r.url),
+      ) ?? results[0];
+
+      const contents = await this.fetchWebContent([baikeItem], 1);
+      const rawContent = contents.get(0) ?? "";
+
+      if (!rawContent) {
+        const fallback = results.slice(0, 3).map(r => r.description).filter(Boolean).join("\n");
+        cityKnowledgeCache.set(city, { content: fallback, fetchedAt: Date.now() });
+        this.logger.info({ city, source: "descriptions", len: fallback.length }, "city-knowledge: fallback");
+        return fallback;
+      }
+
+      const tourismContent = this.extractTourismSections(rawContent);
+      cityKnowledgeCache.set(city, { content: tourismContent, fetchedAt: Date.now() });
+      this.logger.info({ city, source: "baike", len: tourismContent.length }, "city-knowledge: fetched");
+      return tourismContent;
+    } catch (err) {
+      this.logger.warn({ err: err instanceof Error ? err.message : String(err), city }, "city-knowledge: failed");
+      return "";
+    }
+  }
+
+  private extractTourismSections(content: string): string {
+    const lines = content.split(/\n/);
+    const matched = new Set<number>();
+
+    for (let i = 0; i < lines.length; i++) {
+      if (TOURISM_KEYWORDS.some(kw => lines[i].includes(kw))) {
+        for (let j = Math.max(0, i - 1); j <= Math.min(lines.length - 1, i + 1); j++) {
+          matched.add(j);
+        }
+      }
+    }
+
+    const result = [...matched].sort((a, b) => a - b).map(i => lines[i]).join("\n");
+    return result.substring(0, 3000);
   }
 
   private extractJson(text: string): unknown {
