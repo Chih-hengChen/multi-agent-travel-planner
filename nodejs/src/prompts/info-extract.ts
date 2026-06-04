@@ -44,6 +44,10 @@ ${params.history}
 - "舒适"/"舒适型" -> accommodationStyle: "comfort"
 - "经济"/"便宜" -> accommodationStyle: "budget"
 - "豪华"/"高档" -> accommodationStyle: "luxury"
+- "连锁"/"连锁品牌"/"快捷"/"如家"/"汉庭"/"全季"/"民宿"/"客栈" -> accommodationStyle: "comfort"
+- "星级酒店"/"五星"/"四星" -> accommodationStyle: "luxury"
+- "青旅"/"背包客" -> accommodationStyle: "budget"
+- 只要用户提到了住宿偏好（任何描述），都应提取为 accommodationStyle
 - "历史文化"/"胡同" -> travelInterests 中展开为 ["博物馆", "故宫", "胡同", "历史遗址"]
 - "美食"/"吃货" -> travelInterests 中加入 "美食"
 - "自然"/"风景" -> travelInterests 中加入 "自然风光"

@@ -131,9 +131,13 @@ export class WebSearchSource implements TravelDataSource {
         return [];
       }
 
+      this.logger.info({ kind, jsonLen: json.length, sample: JSON.stringify(json[0]).substring(0, 300) }, "web-search: LLM raw json");
       const results: T[] = [];
       for (const item of json) {
         const mapped = mapper(item);
+        if (!mapped) {
+          this.logger.info({ kind, item: JSON.stringify(item).substring(0, 200) }, "web-search: mapper filtered item");
+        }
         if (mapped) results.push(mapped);
       }
       this.logger.info({ kind, query: query.substring(0, 50), results: results.length }, "web-search: parsed");
