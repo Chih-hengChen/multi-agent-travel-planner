@@ -6,6 +6,7 @@ export const settings = Object.freeze({
   LLM_API_KEY: process.env.LLM_API_KEY ?? "",
   LLM_BASE_URL: process.env.LLM_BASE_URL ?? "https://api.minimax.chat/v1",
   LLM_MODEL: process.env.LLM_MODEL ?? "MiniMax-M2.7",
+  LLM_LIGHT_MODEL: process.env.LLM_LIGHT_MODEL ?? "glm-4.7",
   LLM_TEMPERATURE: parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
   LLM_MAX_TOKENS: parseInt(process.env.LLM_MAX_TOKENS ?? "4096", 10),
   BUDGET_MAX_RETRIES: parseInt(process.env.BUDGET_MAX_RETRIES ?? "3", 10),

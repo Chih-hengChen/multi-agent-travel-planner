@@ -36,28 +36,29 @@ export abstract class BaseAgent {
 
   protected abstract execute(state: TravelPlanState): Promise<TravelPlanState>;
 
-  protected async callLlm(prompt: string, systemPrompt?: string): Promise<string> {
-    return this.realLlm(prompt, systemPrompt);
+  protected async callLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {
+    return this.realLlm(prompt, systemPrompt, model);
   }
 
-  private async realLlm(prompt: string, systemPrompt?: string): Promise<string> {
+  private async realLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {
     const isAnthropic = settings.LLM_PROVIDER === "anthropic";
     const messages: Array<{ role: string; content: string }> = [];
     if (!isAnthropic && systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
 
     if (isAnthropic) {
-      return this.anthropicLlm(messages, systemPrompt);
+      return this.anthropicLlm(messages, systemPrompt, model);
     }
-    return this.openaiLlm(messages);
+    return this.openaiLlm(messages, model);
   }
 
   private async anthropicLlm(
     messages: Array<{ role: string; content: string }>,
     systemPrompt?: string,
+    model?: string,
   ): Promise<string> {
     const body: Record<string, unknown> = {
-      model: settings.LLM_MODEL,
+      model: model ?? settings.LLM_MODEL,
       messages,
       temperature: settings.LLM_TEMPERATURE,
       max_tokens: settings.LLM_MAX_TOKENS,
@@ -79,7 +80,7 @@ export abstract class BaseAgent {
     return data.content[0].text;
   }
 
-  private async openaiLlm(messages: Array<{ role: string; content: string }>): Promise<string> {
+  private async openaiLlm(messages: Array<{ role: string; content: string }>, model?: string): Promise<string> {
     const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
@@ -87,7 +88,7 @@ export abstract class BaseAgent {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: settings.LLM_MODEL,
+        model: model ?? settings.LLM_MODEL,
         messages,
         temperature: settings.LLM_TEMPERATURE,
         max_tokens: settings.LLM_MAX_TOKENS,

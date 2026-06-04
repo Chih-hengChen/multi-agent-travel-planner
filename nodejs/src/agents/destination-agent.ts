@@ -6,6 +6,7 @@ import {
   type TravelPlanState,
 } from "../types/index.js";
 import { BaseAgent } from "./base-agent.js";
+import * as destinationPrompt from "../prompts/destination-detail.js";
 
 export class DestinationAgent extends BaseAgent {
   readonly name = "DestinationAgent";
@@ -31,11 +32,7 @@ export class DestinationAgent extends BaseAgent {
   }
 
   private async resolveByLlm(city: string, budget: number): Promise<Destination> {
-    const prompt = `请为旅行目的地"${city}"生成以下信息，严格以 JSON 格式返回（不要其他文字）：
-{"city":"${city}","country":"国家","description":"一句话描述","bestSeason":"spring,summer,autumn或winter","visaRequired":false,"safetyScore":8.5,"costLevel":"low/medium/high","highlights":["景点1","景点2","景点3","景点4"]}
-
-重要：city 字段必须严格为"${city}"，不得更改。
-预算参考：${budget}元人民币。costLevel 应根据该城市的一般消费水平和预算匹配度来设定。safetyScore 范围 0-10。`;
+    const prompt = destinationPrompt.build({ city, budget });
 
     try {
       const raw = await this.callLlm(prompt);

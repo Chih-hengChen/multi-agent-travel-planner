@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { TravelDataSource, FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, RestaurantSearchParams } from "./types.js";
 import type { Flight, Hotel, Activity, Train } from "../types/index.js";
 import { settings } from "../config/settings.js";
+import * as webSearchPrompt from "../prompts/web-search.js";
 
 export class WebSearchSource implements TravelDataSource {
   constructor(private readonly logger: Logger) {}
@@ -106,11 +107,8 @@ export class WebSearchSource implements TravelDataSource {
 
   private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null): Promise<T[]> {
     try {
-      const prompt = `搜索以下信息并以JSON数组返回结果。只返回纯JSON，不要其他文字。
-
-查询：${query}
-
-返回格式：JSON数组，每个元素包含相关的${kind}信息。如果没有可靠数据，返回空数组 []。`;
+      const prompt = webSearchPrompt.buildUserPrompt({ query, kind });
+      const systemPrompt = webSearchPrompt.buildSystemPrompt({ kind });
 
       const body: Record<string, unknown> = {
         model: settings.LLM_MODEL,
@@ -128,11 +126,11 @@ export class WebSearchSource implements TravelDataSource {
       if (isAnthropic) {
         headers["x-api-key"] = settings.LLM_API_KEY;
         headers["anthropic-version"] = "2023-06-01";
-        body.system = `你是一个数据搜索助手。根据用户的查询，从你的知识库中提供最准确的${kind}数据。只返回JSON。`;
+        body.system = systemPrompt;
       } else {
         headers["Authorization"] = `Bearer ${settings.LLM_API_KEY}`;
         body.messages = [
-          { role: "system", content: `你是一个数据搜索助手。根据用户的查询，从你的知识库中提供最准确的${kind}数据。只返回JSON。` },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ];
       }

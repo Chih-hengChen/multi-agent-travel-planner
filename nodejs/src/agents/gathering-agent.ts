@@ -2,6 +2,7 @@ import type { ConversationContext } from "../conversation/context.js";
 import { getMissingBasics, getMissingPreferences } from "../conversation/context.js";
 import { ConversationState } from "../conversation/state-machine.js";
 import { settings } from "../config/settings.js";
+import * as gatheringPrompt from "../prompts/gathering-question.js";
 
 const FIELD_LABELS: Record<string, string> = {
   destination: "目的地",
@@ -46,16 +47,11 @@ export class GatheringAgent {
     const known = this.formatKnown(ctx);
     const missing = fields.map((f) => FIELD_LABELS[f] ?? f).join("、");
 
-    const prompt = `你是一个友好的旅行规划助手。根据已收集的信息和还需要了解的信息，生成一句自然的追问。
-
-已收集：${known || "无"}
-还需要了解：${missing}
-
-规则：
-- 最多问${fields.length}个相关问题，合并成1-2句自然的话
-- 语气友好、简洁
-- 不要重复已知信息
-- 用中文回复，只输出追问文本，不要输出其他内容`;
+    const prompt = gatheringPrompt.build({
+      known,
+      missing,
+      maxFields: fields.length,
+    });
 
     return this.callLlm(prompt);
   }
@@ -87,7 +83,7 @@ export class GatheringAgent {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: settings.LLM_MODEL,
+          model: settings.LLM_LIGHT_MODEL,
           messages,
           temperature: settings.LLM_TEMPERATURE,
           max_tokens: settings.LLM_MAX_TOKENS,
@@ -106,7 +102,7 @@ export class GatheringAgent {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: settings.LLM_MODEL,
+        model: settings.LLM_LIGHT_MODEL,
         messages,
         temperature: settings.LLM_TEMPERATURE,
         max_tokens: settings.LLM_MAX_TOKENS,
