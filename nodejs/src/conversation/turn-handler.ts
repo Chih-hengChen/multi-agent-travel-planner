@@ -8,7 +8,6 @@ import {
   mergeExtracted,
   toUserPreferences,
   buildPlanSummary,
-  isReadyForPipeline,
 } from "./context.js";
 import { InfoExtractor } from "./info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
@@ -112,10 +111,7 @@ export class TurnHandler {
       return this.searchTransport(ctx);
     }
 
-    if (
-      newState === ConversationState.SEARCHING ||
-      (newState === ConversationState.GATHERING_PREFERENCES && isReadyForPipeline(ctx))
-    ) {
+    if (newState === ConversationState.SEARCHING) {
       return this.runPipeline(ctx);
     }
 
