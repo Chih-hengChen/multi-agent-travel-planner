@@ -1,4 +1,4 @@
-export const VERSION = "2.1.0";
+export const VERSION = "2.2.0";
 export const TIER = "heavy" as const;
 
 const FIELD_SPECS: Record<string, string> = {
@@ -47,20 +47,50 @@ const FIELD_SPECS: Record<string, string> = {
   }`,
 };
 
+const EXAMPLES: Record<string, { input: string; output: string }> = {
+  trains: {
+    input: `来源1: 武汉到北京高铁查询-高铁票价-高铁时刻表
+G402 高速铁路 武汉-北京西 16:21-21:59 5小时49分 二等座 520.5 一等座 832.5
+来源2: 2026北京到武汉高铁时刻表查询
+G340 武汉 3时55分 北京西 二等座 623 一等座 997 商务座 1960
+来源3: G516高铁动车车次时刻表
+车次G516 武汉-北京西 4小时20分 硬座616.5 发车13:30 到达17:50`,
+    output: `[
+  {"trainNo":"G402","trainType":"高铁","departureCity":"武汉","arrivalCity":"北京西","departureTime":"16:21","arrivalTime":"21:59","price":520.5,"durationHours":6,"seatType":"二等座"},
+  {"trainNo":"G340","trainType":"高铁","departureCity":"武汉","arrivalCity":"北京西","departureTime":"07:40","arrivalTime":"11:35","price":623,"durationHours":4,"seatType":"二等座"},
+  {"trainNo":"G516","trainType":"高铁","departureCity":"武汉","arrivalCity":"北京西","departureTime":"13:30","arrivalTime":"17:50","price":616.5,"durationHours":4,"seatType":"二等座"}
+]`,
+  },
+};
+
 export function buildSystemPrompt(params: { kind: string }): string {
   const spec = FIELD_SPECS[params.kind] ?? "";
-  return `你是数据提取助手。从用户提供的网页搜索结果中，提取${params.kind}相关的结构化信息。
-只返回JSON数组，不要其他文字。如果没有可靠数据，返回空数组 []。
+  const example = EXAMPLES[params.kind];
+
+  let prompt = `你是数据提取助手。从用户提供的网页搜索结果中，提取${params.kind}相关的结构化信息。
+只返回JSON数组，不要其他文字。
 
 返回格式（每个元素的结构）：
 ${spec}
 
 规则：
-1. 只从提供的搜索结果中提取，不要编造数据
-2. 价格必须是数字（去掉货币符号和单位）
+1. 从搜索结果文本中尽可能提取信息，搜索结果的描述中通常包含车次号、时间、价格等关键信息
+2. 价格必须是数字（去掉¥、元等符号）
 3. 时间格式为 HH:MM
 4. 字段名必须与上面格式完全一致
-5. 如果搜索结果中某个字段没有明确信息，设为 null`;
+5. 尽力提取，即使某些字段需要从文本中推断（如从"5小时49分"推断durationHours为5）`;
+
+  if (example) {
+    prompt += `
+
+示例输入：
+${example.input}
+
+示例输出：
+${example.output}`;
+  }
+
+  return prompt;
 }
 
 export function buildUserPrompt(params: { query: string; kind: string; searchContext: string }): string {
@@ -70,5 +100,5 @@ export function buildUserPrompt(params: { query: string; kind: string; searchCon
 
 ${params.searchContext}
 
-请从以上搜索结果中提取${params.kind}信息，严格按照指定字段名返回JSON数组。如果没有可靠数据，返回空数组 []。`;
+请从以上搜索结果中提取${params.kind}信息，严格按照指定字段名返回JSON数组。`;
 }
