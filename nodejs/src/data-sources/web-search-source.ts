@@ -149,7 +149,7 @@ export class WebSearchSource implements TravelDataSource {
       const resp = await fetch(`${settings.WEBSEARCH_DAEMON_URL}/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, limit: 8 }),
+        body: JSON.stringify({ query, limit: 8, engines: ["sogou", "bing"] }),
         signal: AbortSignal.timeout(15_000),
       });
 
