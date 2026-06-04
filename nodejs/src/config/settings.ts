@@ -22,4 +22,5 @@ export const settings = Object.freeze({
   SEARCH_TIMEOUT_MS: parseInt(process.env.SEARCH_TIMEOUT_MS ?? "10000", 10),
   MAX_TRANSPORT_OPTIONS: parseInt(process.env.MAX_TRANSPORT_OPTIONS ?? "4", 10),
   MAX_HOTEL_OPTIONS: parseInt(process.env.MAX_HOTEL_OPTIONS ?? "3", 10),
+  WEBSEARCH_DAEMON_URL: process.env.WEBSEARCH_DAEMON_URL ?? "http://127.0.0.1:3210",
 });
