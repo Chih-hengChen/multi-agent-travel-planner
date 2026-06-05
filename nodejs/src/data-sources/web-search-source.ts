@@ -27,6 +27,8 @@ const RELEVANCE_KEYWORDS: Record<string, string[]> = {
 };
 
 export class WebSearchSource implements TravelDataSource {
+  private firecrawlContentCache = new Map<string, string>();
+
   constructor(private readonly logger: Logger) {}
 
   async searchFlights(params: FlightSearchParams): Promise<Flight[]> {
@@ -162,6 +164,7 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null, opts?: { cityKnowledge?: string; allowLlmFallback?: boolean }): Promise<T[]> {
+    this.firecrawlContentCache.clear();
     try {
       const searchResults = await this.searchWeb(query);
       if (searchResults.length === 0) {
@@ -234,6 +237,61 @@ export class WebSearchSource implements TravelDataSource {
     return results;
   }
 
+  private async searchWebViaFirecrawl(query: string): Promise<SearchResultItem[]> {
+    if (!settings.FIRECRAWL_API_KEY || !settings.FIRECRAWL_ENABLED) return [];
+
+    try {
+      const resp = await fetch("https://api.firecrawl.dev/v2/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${settings.FIRECRAWL_API_KEY}`,
+        },
+        body: JSON.stringify({
+          query,
+          limit: 8,
+          scrapeOptions: { formats: ["markdown"] },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+
+      if (!resp.ok) {
+        this.logger.warn({ status: resp.status }, "web-search/firecrawl: request failed");
+        return [];
+      }
+
+      const body = await resp.json() as {
+        success: boolean;
+        data?: { web?: Array<{ title?: string; url?: string; markdown?: string; metadata?: { description?: string } }> };
+      };
+
+      if (!body.success || !body.data?.web?.length) {
+        this.logger.info("web-search/firecrawl: no results");
+        return [];
+      }
+
+      const items: SearchResultItem[] = [];
+      for (const r of body.data.web) {
+        if (!r.url) continue;
+        const md = r.markdown ?? "";
+        if (md) this.firecrawlContentCache.set(r.url, md.substring(0, 3000));
+        items.push({
+          title: r.title ?? "",
+          url: r.url,
+          description: r.metadata?.description ?? md.substring(0, 200),
+          source: "firecrawl",
+          engine: "firecrawl",
+        });
+      }
+
+      this.logger.info({ count: items.length, query: query.substring(0, 50) }, "web-search/firecrawl: results");
+      return items;
+    } catch (err) {
+      this.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "web-search/firecrawl: failed");
+      return [];
+    }
+  }
+
   private async searchWeb(query: string): Promise<SearchResultItem[]> {
     try {
       const resp = await fetch(`${settings.WEBSEARCH_DAEMON_URL}/search`, {
@@ -264,8 +322,12 @@ export class WebSearchSource implements TravelDataSource {
       return [];
     } catch (err) {
       this.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "web-search: daemon unreachable");
-      return [];
     }
+
+    this.firecrawlContentCache.clear();
+    const fcResults = await this.searchWebViaFirecrawl(query);
+    if (fcResults.length > 0) return fcResults;
+    return [];
   }
 
   private async fetchWebContent(items: SearchResultItem[], maxItems: number): Promise<Map<number, string>> {
@@ -274,6 +336,9 @@ export class WebSearchSource implements TravelDataSource {
 
     const settled = await Promise.allSettled(
       targets.map(async (item, i) => {
+        const cached = this.firecrawlContentCache.get(item.url);
+        if (cached) return { index: i, content: cached };
+
         const resp = await fetch(`${settings.WEBSEARCH_DAEMON_URL}/fetch-web`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -24,6 +24,8 @@ export const settings = Object.freeze({
   MAX_TRANSPORT_OPTIONS: parseInt(process.env.MAX_TRANSPORT_OPTIONS ?? "4", 10),
   MAX_HOTEL_OPTIONS: parseInt(process.env.MAX_HOTEL_OPTIONS ?? "3", 10),
   WEBSEARCH_DAEMON_URL: process.env.WEBSEARCH_DAEMON_URL ?? "http://127.0.0.1:3210",
+  FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY ?? "",
+  FIRECRAWL_ENABLED: process.env.FIRECRAWL_ENABLED !== "false",
   XHS_SERVICE_URL: process.env.XHS_SERVICE_URL ?? "http://127.0.0.1:3220",
   TRAIN_12306_ENABLED: process.env.TRAIN_12306_ENABLED !== "false",
 });
