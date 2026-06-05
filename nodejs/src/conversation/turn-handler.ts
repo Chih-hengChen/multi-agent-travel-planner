@@ -247,7 +247,7 @@ export class TurnHandler {
         returnOpts.push(...trains.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(trainToOption));
       }
 
-      if (!isOutboundTrain) {
+      if (!isOutboundTrain || outbound.length === 0) {
         const flights = await resolver.resolveFlights({
           origin: ctx.departureCity ?? "",
           destination: ctx.destination ?? "",
@@ -259,7 +259,7 @@ export class TurnHandler {
         }
       }
 
-      if (!isReturnTrain) {
+      if (!isReturnTrain || returnOpts.length === 0) {
         const flights = await resolver.resolveFlights({
           origin: ctx.destination ?? "",
           destination: ctx.departureCity ?? "",
