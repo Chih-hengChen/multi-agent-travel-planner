@@ -46,6 +46,45 @@ interface ApiHotel {
   latitude?: number;
 }
 
+async function enrichChineseNames(hotels: Hotel[], city: string): Promise<void> {
+  if (!settings.AMAP_API_KEY || hotels.length === 0) return;
+  try {
+    const names = hotels.map((h) => h.name).join("|");
+    const qs = new URLSearchParams({
+      key: settings.AMAP_API_KEY,
+      keywords: names,
+      city,
+      citylimit: "true",
+      offset: "25",
+      page: "1",
+      extensions: "base",
+    });
+    const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json() as { status: string; pois?: { name: string }[] };
+    if (data.status !== "1" || !data.pois?.length) return;
+
+    const poiMap = new Map<string, string>();
+    for (const poi of data.pois) {
+      if (poi.name) poiMap.set(poi.name.toLowerCase(), poi.name);
+    }
+
+    for (const hotel of hotels) {
+      const en = hotel.name.toLowerCase();
+      for (const [cnLower, cnName] of poiMap) {
+        if (en.includes(cnLower) || cnLower.includes(en.replace(/\s+/g, ""))) {
+          hotel.name = cnName;
+          break;
+        }
+      }
+    }
+  } catch {
+    // Amap lookup failed, keep English names
+  }
+}
+
 export class BookingSource implements TravelDataSource {
   async searchFlights(_params: FlightSearchParams): Promise<never[]> {
     return [];
@@ -100,9 +139,9 @@ export class BookingSource implements TravelDataSource {
         data?: { result?: ApiHotel[] };
       };
 
-      const hotels = body.data?.result ?? [];
+      const rawHotels = body.data?.result ?? [];
 
-      return hotels.map((h) => {
+      const hotels: Hotel[] = rawHotels.map((h) => {
         const perNight = h.composite_price_breakdown?.gross_amount_per_night?.value
           ?? (h.min_total_price ? h.min_total_price / nights : 0);
         return {
@@ -116,6 +155,10 @@ export class BookingSource implements TravelDataSource {
           distanceToCenterKm: 0,
         } as Hotel;
       });
+
+      await enrichChineseNames(hotels, params.city);
+
+      return hotels;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[BookingSource] 酒店搜索失败: ${msg}`);

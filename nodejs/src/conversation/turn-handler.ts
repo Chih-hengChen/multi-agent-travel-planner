@@ -95,6 +95,7 @@ export class TurnHandler {
         userMessage,
         ctx.messageHistory.slice(0, -1),
         knownFields,
+        ctx.sessionId,
       );
     } catch (err) {
       this.log.warn({ err }, "InfoExtractor failed, continuing with empty extraction");
@@ -122,7 +123,7 @@ export class TurnHandler {
       newState === ConversationState.GATHERING_PREFERENCES ||
       newState === ConversationState.INIT
     ) {
-      const question = await this.gatheringAgent.generateQuestion(ctx);
+      const question = await this.gatheringAgent.generateQuestion(ctx, ctx.sessionId);
       if (question.text) {
         ctx.messageHistory.push({ role: "assistant", content: question.text });
         ctx.pendingQuestion = question.text;
@@ -189,11 +190,7 @@ export class TurnHandler {
         };
       }
 
-      ctx.selectedHotelId = request.hotelId;
-      const selectedHotel = ctx.hotelOptions?.find((h) => h.name === request.hotelId);
-      if (selectedHotel) {
-        ctx.selectedHotelName = selectedHotel.name;
-      }
+      ctx.selectedHotel = ctx.hotelOptions?.find((h) => h.name === request.hotelId);
 
       if (canTransition(ctx.state, ConversationState.SEARCHING)) {
         return this.runPipeline(ctx);

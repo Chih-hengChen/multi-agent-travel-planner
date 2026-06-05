@@ -62,8 +62,16 @@
 - `b88fc94` fix: 补全 4 个缺失 JS 文件 + npm 依赖 + os.chdir 修复 require 路径
 - `d1a6c0b` fix: curl_cffi TLS 指纹伪装绕过 XHS 反爬，搜索功能端到端验证通过
 
+### 用户选择注入 Pipeline (2026-06-05)
+
+- `8e45a7e` feat: inject user-selected transport and hotel into pipeline
+- context.ts: TransportOption → Train/Flight 转换 + selectedHotel 查找
+- flight-agent.ts: 检测 selectedOutbound/selectedReturn 时跳过搜索，直接使用用户选择
+- hotel-agent.ts: 检测 selectedHotel 时跳过搜索，直接设置推荐酒店并计算总价
+
 ## 下一步待办
 
+- 端到端测试：验证用户选择交通/酒店后 pipeline 正确使用选择项而非重新搜索
 - 端到端测试：启动 Node.js 服务验证 LLM 自主调用 XHS 搜索工具
 - 端到端测试：验证 12306 高铁查询实际返回车次数据
 - HotelAgent 无 fallback 后需验证 Booking.com API 可用性

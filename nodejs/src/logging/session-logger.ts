@@ -14,6 +14,8 @@ export type LogEventType =
   | "plan_edited"
   | "select"
   | "info_extracted"
+  | "llm_request"
+  | "llm_response"
   | "error";
 
 interface LogEntry {

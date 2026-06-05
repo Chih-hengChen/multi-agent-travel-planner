@@ -3,6 +3,7 @@ import { getMissingBasics, getMissingPreferences } from "../conversation/context
 import { ConversationState } from "../conversation/state-machine.js";
 import { settings } from "../config/settings.js";
 import * as gatheringPrompt from "../prompts/gathering-question.js";
+import { sessionLogger } from "../logging/session-logger.js";
 
 const FIELD_LABELS: Record<string, string> = {
   destination: "目的地",
@@ -19,12 +20,13 @@ const FIELD_LABELS: Record<string, string> = {
 export class GatheringAgent {
   async generateQuestion(
     ctx: ConversationContext,
+    sessionId?: string,
   ): Promise<{ text: string; fields: string[] }> {
     const missing = this.getMissingFields(ctx);
     if (missing.length === 0) return { text: "", fields: [] };
 
     const fields = missing.slice(0, 3);
-    const text = await this.llmQuestion(ctx, fields);
+    const text = await this.llmQuestion(ctx, fields, sessionId);
     return { text, fields };
   }
 
@@ -44,6 +46,7 @@ export class GatheringAgent {
   private async llmQuestion(
     ctx: ConversationContext,
     fields: string[],
+    sessionId?: string,
   ): Promise<string> {
     const known = this.formatKnown(ctx);
     const missing = fields.map((f) => FIELD_LABELS[f] ?? f).join("、");
@@ -54,7 +57,7 @@ export class GatheringAgent {
       maxFields: fields.length,
     });
 
-    return this.callLlm(prompt);
+    return this.callLlm(prompt, sessionId);
   }
 
   private formatKnown(ctx: ConversationContext): string {
@@ -70,11 +73,20 @@ export class GatheringAgent {
     return pairs.join("，");
   }
 
-  private async callLlm(prompt: string): Promise<string> {
+  private async callLlm(prompt: string, sessionId?: string): Promise<string> {
     const isAnthropic = settings.LLM_PROVIDER === "anthropic";
     const messages: Array<{ role: string; content: string }> = [];
     messages.push({ role: "user", content: prompt });
 
+    if (sessionId) {
+      sessionLogger.append(sessionId, "llm_request", {
+        model: settings.LLM_LIGHT_MODEL,
+        caller: "gathering_agent",
+        messages,
+      });
+    }
+
+    let raw: string;
     if (isAnthropic) {
       const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
         method: "POST",
@@ -93,24 +105,33 @@ export class GatheringAgent {
       });
       const data = (await resp.json()) as { content: Array<{ type: string; text: string }>; error?: { message: string } };
       if (data.error) throw new Error(`Anthropic API error: ${data.error.message}`);
-      return data.content[0].text;
+      raw = data.content[0].text;
+    } else {
+      const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${settings.LLM_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: settings.LLM_LIGHT_MODEL,
+          messages,
+          temperature: settings.LLM_TEMPERATURE,
+          max_tokens: settings.LLM_MAX_TOKENS,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      const data = (await resp.json()) as { choices: Array<{ message: { content: string } }> };
+      raw = data.choices[0].message.content;
     }
 
-    const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${settings.LLM_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    if (sessionId) {
+      sessionLogger.append(sessionId, "llm_response", {
         model: settings.LLM_LIGHT_MODEL,
-        messages,
-        temperature: settings.LLM_TEMPERATURE,
-        max_tokens: settings.LLM_MAX_TOKENS,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const data = (await resp.json()) as { choices: Array<{ message: { content: string } }> };
-    return data.choices[0].message.content;
+        caller: "gathering_agent",
+        response: raw,
+      });
+    }
+    return raw;
   }
 }

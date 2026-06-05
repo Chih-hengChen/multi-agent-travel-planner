@@ -1,6 +1,7 @@
 import { settings } from "../config/settings.js";
 import type { ExtractedFields } from "./context.js";
 import * as infoExtractPrompt from "../prompts/info-extract.js";
+import { sessionLogger } from "../logging/session-logger.js";
 
 function validateField(key: string, value: unknown): boolean {
   if (value === undefined || value === null) return false;
@@ -35,6 +36,7 @@ export class InfoExtractor {
     userMessage: string,
     history: Array<{ role: string; content: string }>,
     knownFields: Record<string, unknown>,
+    sessionId?: string,
   ): Promise<ExtractedFields> {
     const nonEmptyKnown = Object.fromEntries(
       Object.entries(knownFields).filter(([, v]) => v !== undefined && v !== null && v !== ""),
@@ -55,17 +57,34 @@ export class InfoExtractor {
       currentDate,
     });
 
-    const raw = await this.callLlm(prompt);
+    const raw = await this.callLlm(prompt, sessionId);
     return this.parseResponse(raw);
   }
 
-  private async callLlm(prompt: string): Promise<string> {
+  private async callLlm(prompt: string, sessionId?: string): Promise<string> {
     const isAnthropic = settings.LLM_PROVIDER === "anthropic";
 
-    if (isAnthropic) {
-      return this.callAnthropic(prompt);
+    const messages = [{ role: "user" as const, content: prompt }];
+    if (sessionId) {
+      sessionLogger.append(sessionId, "llm_request", {
+        model: settings.LLM_LIGHT_MODEL,
+        caller: "info_extractor",
+        messages,
+      });
     }
-    return this.callOpenAi(prompt);
+
+    const raw = isAnthropic
+      ? await this.callAnthropic(prompt)
+      : await this.callOpenAi(prompt);
+
+    if (sessionId) {
+      sessionLogger.append(sessionId, "llm_response", {
+        model: settings.LLM_LIGHT_MODEL,
+        caller: "info_extractor",
+        response: raw,
+      });
+    }
+    return raw;
   }
 
   private async callAnthropic(prompt: string): Promise<string> {
