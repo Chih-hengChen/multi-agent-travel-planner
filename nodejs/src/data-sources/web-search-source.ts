@@ -27,8 +27,6 @@ const RELEVANCE_KEYWORDS: Record<string, string[]> = {
 };
 
 export class WebSearchSource implements TravelDataSource {
-  private firecrawlContentCache = new Map<string, string>();
-
   constructor(private readonly logger: Logger) {}
 
   async searchFlights(params: FlightSearchParams): Promise<Flight[]> {
@@ -164,7 +162,6 @@ export class WebSearchSource implements TravelDataSource {
   }
 
   private async searchAndParse<T>(query: string, kind: string, mapper: (raw: unknown) => T | null, opts?: { cityKnowledge?: string; allowLlmFallback?: boolean }): Promise<T[]> {
-    this.firecrawlContentCache.clear();
     try {
       const searchResults = await this.searchWeb(query);
       if (searchResults.length === 0) {
@@ -247,11 +244,7 @@ export class WebSearchSource implements TravelDataSource {
           "Content-Type": "application/json",
           Authorization: `Bearer ${settings.FIRECRAWL_API_KEY}`,
         },
-        body: JSON.stringify({
-          query,
-          limit: 8,
-          scrapeOptions: { formats: ["markdown"] },
-        }),
+        body: JSON.stringify({ query, limit: 8 }),
         signal: AbortSignal.timeout(20_000),
       });
 
@@ -262,7 +255,7 @@ export class WebSearchSource implements TravelDataSource {
 
       const body = await resp.json() as {
         success: boolean;
-        data?: { web?: Array<{ title?: string; url?: string; markdown?: string; metadata?: { description?: string } }> };
+        data?: { web?: Array<{ title?: string; url?: string; description?: string }> };
       };
 
       if (!body.success || !body.data?.web?.length) {
@@ -273,12 +266,10 @@ export class WebSearchSource implements TravelDataSource {
       const items: SearchResultItem[] = [];
       for (const r of body.data.web) {
         if (!r.url) continue;
-        const md = r.markdown ?? "";
-        if (md) this.firecrawlContentCache.set(r.url, md.substring(0, 3000));
         items.push({
           title: r.title ?? "",
           url: r.url,
-          description: r.metadata?.description ?? md.substring(0, 200),
+          description: r.description ?? "",
           source: "firecrawl",
           engine: "firecrawl",
         });
@@ -324,7 +315,6 @@ export class WebSearchSource implements TravelDataSource {
       this.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "web-search: daemon unreachable");
     }
 
-    this.firecrawlContentCache.clear();
     const fcResults = await this.searchWebViaFirecrawl(query);
     if (fcResults.length > 0) return fcResults;
     return [];
@@ -336,9 +326,6 @@ export class WebSearchSource implements TravelDataSource {
 
     const settled = await Promise.allSettled(
       targets.map(async (item, i) => {
-        const cached = this.firecrawlContentCache.get(item.url);
-        if (cached) return { index: i, content: cached };
-
         const resp = await fetch(`${settings.WEBSEARCH_DAEMON_URL}/fetch-web`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
