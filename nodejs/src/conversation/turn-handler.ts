@@ -17,6 +17,7 @@ import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
+import { Train12306Source } from "../data-sources/train12306-source.js";
 import { settings } from "../config/settings.js";
 import type { PlanSummary, Flight, Train, Hotel } from "../types/index.js";
 import { withSessionId } from "../logging/session-context.js";
@@ -417,6 +418,7 @@ export class TurnHandler {
       new AmadeusSource(),
       new BookingSource(),
       new AmapSource(),
+      new Train12306Source(log),
       webSearch,
     ];
     return new SourceResolver(sources, log);
