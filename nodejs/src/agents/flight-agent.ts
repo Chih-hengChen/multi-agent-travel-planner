@@ -11,6 +11,33 @@ export class FlightAgent extends BaseAgent {
     const pref = state.preferences!;
     const dest = state.selectedDestination!;
 
+    if (pref.selectedOutbound && pref.selectedReturn) {
+      const outIsTrain = "trainNo" in pref.selectedOutbound;
+      if (outIsTrain) {
+        state.trainOutbound = pref.selectedOutbound as Train;
+        state.trainReturn = pref.selectedReturn as Train;
+        state.transportMode = "train";
+        state.flightResult = {
+          outboundFlights: [], returnFlights: [],
+          recommendedOutbound: null, recommendedReturn: null,
+          totalFlightCost: 0,
+        };
+        const total = (state.trainOutbound.price + state.trainReturn.price) * pref.numTravelers;
+        this.log.info({ agent: this.name, out: state.trainOutbound.trainNo, ret: state.trainReturn.trainNo, total }, "使用用户选择的高铁");
+      } else {
+        const outFlight = pref.selectedOutbound as Flight;
+        const retFlight = pref.selectedReturn as Flight;
+        state.transportMode = "flight";
+        state.flightResult = {
+          outboundFlights: [outFlight], returnFlights: [retFlight],
+          recommendedOutbound: outFlight, recommendedReturn: retFlight,
+          totalFlightCost: (outFlight.price + retFlight.price) * pref.numTravelers,
+        };
+        this.log.info({ agent: this.name, out: outFlight.flightNo, ret: retFlight.flightNo }, "使用用户选择的航班");
+      }
+      return state;
+    }
+
     if (pref.departureCity === dest.city) {
       state.transportMode = "flight";
       state.flightResult = {

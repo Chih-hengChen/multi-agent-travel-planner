@@ -12,6 +12,19 @@ export class HotelAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const nights = HotelAgent.calcNights(pref.startDate, pref.endDate);
 
+    if (pref.selectedHotel) {
+      const rooms = Math.max(1, Math.ceil(pref.numTravelers / 2));
+      const total = pref.selectedHotel.pricePerNight * nights * rooms;
+      state.hotelResult = {
+        hotels: [pref.selectedHotel],
+        recommended: pref.selectedHotel,
+        totalNights: nights,
+        totalHotelCost: total,
+      };
+      this.log.info({ agent: this.name, city: dest.city, hotel: pref.selectedHotel.name, total }, "使用用户选择的酒店");
+      return state;
+    }
+
     let hotels = await this.dataSource.searchHotels({
       city: dest.city,
       checkIn: pref.startDate,

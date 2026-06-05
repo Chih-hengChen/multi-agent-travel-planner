@@ -1,5 +1,5 @@
 import { ConversationState } from "./state-machine.js";
-import { TravelStyle, type UserPreferences, type PlanSummary, type TravelPlanState, type Hotel } from "../types/index.js";
+import { TravelStyle, type UserPreferences, type PlanSummary, type TravelPlanState, type Hotel, type Train, type Flight } from "../types/index.js";
 
 export interface TransportOption {
   id: string;
@@ -48,6 +48,7 @@ export interface ConversationContext {
   foodPreferences?: string[];
   transportPreference?: string;
   specialRequests?: string;
+  mustVisitAttractions?: string[];
 
   transportSearchResult?: TransportSearchResult;
   hotelOptions?: Hotel[];
@@ -77,11 +78,12 @@ export interface ExtractedFields {
   foodPreferences?: string[];
   transportPreference?: string;
   specialRequests?: string;
+  mustVisitAttractions?: string[];
 }
 
 export const FIELD_GROUPS = {
   basics: ["destination", "departureCity", "startDate", "endDate", "numTravelers"] as const,
-  preferences: ["budget", "accommodationStyle", "travelInterests", "transportPreference"] as const,
+  preferences: ["budget", "accommodationStyle", "travelInterests", "transportPreference", "mustVisitAttractions"] as const,
   nice: ["foodPreferences"] as const,
 } as const;
 
@@ -124,6 +126,15 @@ export function mergeExtracted(
 
   for (const [key, value] of Object.entries(extracted)) {
     if (value === undefined || value === null) continue;
+
+    if (key === "mustVisitAttractions" && Array.isArray(value)) {
+      const existing = (merged as Record<string, unknown>)[key] as string[] | undefined;
+      const existingSet = new Set(existing ?? []);
+      const merged_arr = [...(existing ?? []), ...value.filter((v) => !existingSet.has(v))];
+      (merged as Record<string, unknown>)[key] = merged_arr;
+      continue;
+    }
+
     const current = merged[key as keyof ConversationContext];
     if (current !== undefined && current !== null && current !== "") continue;
     (merged as Record<string, unknown>)[key] = value;
@@ -143,9 +154,69 @@ export function mergeExtracted(
   return merged;
 }
 
+function transportOptionToTrain(opt: TransportOption): Train {
+  return {
+    trainNo: opt.trainNo ?? opt.id,
+    trainType: opt.mode === "train" ? "高铁" : "动车",
+    departureCity: opt.departStation,
+    arrivalCity: opt.arriveStation,
+    departureTime: opt.departTime,
+    arrivalTime: opt.arriveTime,
+    price: opt.price,
+    durationHours: parseDuration(opt.duration),
+    seatType: "二等座",
+  };
+}
+
+function transportOptionToFlight(opt: TransportOption): Flight {
+  return {
+    airline: opt.airline ?? "",
+    flightNo: opt.flightNo ?? opt.id,
+    departureCity: opt.departStation,
+    arrivalCity: opt.arriveStation,
+    departureTime: opt.departTime,
+    arrivalTime: opt.arriveTime,
+    price: opt.price,
+    durationHours: parseDuration(opt.duration),
+    stops: 0,
+    cabinClass: "economy",
+  };
+}
+
+function parseDuration(dur: string): number {
+  if (!dur) return 0;
+  const hours = dur.match(/(\d+)h/i)?.[1];
+  const mins = dur.match(/(\d+)m/i)?.[1];
+  return (Number(hours ?? 0)) + (Number(mins ?? 0)) / 60;
+}
+
+function findTransportOption(
+  opts: TransportOption[] | undefined,
+  id: string | undefined,
+): TransportOption | undefined {
+  if (!id || !opts) return undefined;
+  return opts.find((o) => o.id === id);
+}
+
 export function toUserPreferences(ctx: ConversationContext): UserPreferences {
   const numDays = ctx.numDays ?? 4;
   const numTravelers = ctx.numTravelers ?? 1;
+
+  const selectedOutboundOpt = findTransportOption(ctx.transportSearchResult?.outbound, ctx.selectedOutboundId);
+  const selectedReturnOpt = findTransportOption(ctx.transportSearchResult?.return, ctx.selectedReturnId);
+  const selectedHotelOpt = ctx.hotelOptions?.find((h) => h.name === ctx.selectedHotelName);
+
+  const selectedOutbound = selectedOutboundOpt
+    ? selectedOutboundOpt.mode === "train"
+      ? transportOptionToTrain(selectedOutboundOpt)
+      : transportOptionToFlight(selectedOutboundOpt)
+    : undefined;
+
+  const selectedReturn = selectedReturnOpt
+    ? selectedReturnOpt.mode === "train"
+      ? transportOptionToTrain(selectedReturnOpt)
+      : transportOptionToFlight(selectedReturnOpt)
+    : undefined;
 
   return {
     budget: ctx.budget ?? numTravelers * numDays * 600,
@@ -161,7 +232,7 @@ export function toUserPreferences(ctx: ConversationContext): UserPreferences {
     preferredDestination: ctx.destination,
     outboundTransportPreference: (ctx.transportPreference as UserPreferences["outboundTransportPreference"]) ?? "no_preference",
     returnTransportPreference: (ctx.transportPreference as UserPreferences["returnTransportPreference"]) ?? "no_preference",
-    mustVisitAttractions: [],
+    mustVisitAttractions: ctx.mustVisitAttractions ?? [],
     departureTime: "flexible",
     budgetStrictness: "flexible",
     specialRequests: ctx.specialRequests,
@@ -169,6 +240,9 @@ export function toUserPreferences(ctx: ConversationContext): UserPreferences {
     preferredHotelBrands: [],
     localTransitMode: "mixed",
     diningPreference: "mixed",
+    selectedOutbound,
+    selectedReturn,
+    selectedHotel: selectedHotelOpt,
   };
 }
 
