@@ -69,10 +69,18 @@
 - flight-agent.ts: 检测 selectedOutbound/selectedReturn 时跳过搜索，直接使用用户选择
 - hotel-agent.ts: 检测 selectedHotel 时跳过搜索，直接设置推荐酒店并计算总价
 
+### 系统性调试验证修复 6 项核心 Bug (2026-06-05)
+
+- `4967087` feat: split transport preference into outbound/return — 去程返程独立搜索
+- `8e45a7e` feat: inject user-selected transport and hotel into pipeline — 用户选择不再被覆盖
+- `4da82fc` feat: mustVisitAttractions priority + smart transit + city food map — 景点优先级+智能交通+城市美食
+- `9576649` feat: hotel Chinese names via Amap POI + session logging — 酒店中文名+日志追踪
+- 6 项修复：①去程返程拆分 ②用户选择注入 pipeline ③景点必须包含 ④智能市内交通 ⑤酒店中文名 ⑥餐厅地域特色
+
 ## 下一步待办
 
-- 端到端测试：验证用户选择交通/酒店后 pipeline 正确使用选择项而非重新搜索
-- 端到端测试：启动 Node.js 服务验证 LLM 自主调用 XHS 搜索工具
-- 端到端测试：验证 12306 高铁查询实际返回车次数据
-- HotelAgent 无 fallback 后需验证 Booking.com API 可用性
-- 12306 可能存在反爬限制，生产环境需观察稳定性
+- 端到端测试：启动服务验证去程高铁返程飞机场景
+- 端到端测试：验证用户选择交通/酒店后 pipeline 正确使用选择项
+- 端到端测试：验证景点包含用户指定的故宫/颐和园等
+- 端到端测试：验证餐厅推荐为当地特色（北京→烤鸭/涮肉，成都→火锅/川菜）
+- 端到端测试：验证市内交通有起终点描述，短距离步行
