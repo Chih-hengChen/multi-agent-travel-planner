@@ -75,7 +75,13 @@
 - `8e45a7e` feat: inject user-selected transport and hotel into pipeline — 用户选择不再被覆盖
 - `4da82fc` feat: mustVisitAttractions priority + smart transit + city food map — 景点优先级+智能交通+城市美食
 - `9576649` feat: hotel Chinese names via Amap POI + session logging — 酒店中文名+日志追踪
-- 6 项修复：①去程返程拆分 ②用户选择注入 pipeline ③景点必须包含 ④智能市内交通 ⑤酒店中文名 ⑥餐厅地域特色
+
+### LLM 作为 Brain — 替换算法式 ActivityAgent (2026-06-05)
+
+- `72d5d91` feat: LLMPlanAgent — LLM 通过 tool_use 循环生成行程
+- 核心：LLM 调用 search_attractions/search_restaurants/search_xhs_notes 获取信息，智能编排行程
+- 修复：info-extract 拆分去程/返程偏好提取 + turn-handler 独立搜索 + enrichChineseNames 品牌匹配 + diningPreference 默认 local_specialties
+- Pipeline 中 ActivityAgent → LLMPlanAgent
 
 ## 下一步待办
 
