@@ -5,6 +5,12 @@ import sys
 from typing import List, Dict, Any
 from pathlib import Path
 
+try:
+    from curl_cffi import requests as curl_requests
+    sys.modules['requests'] = curl_requests
+except ImportError:
+    pass
+
 _COOKIE = os.environ.get("XHS_COOKIE", "")
 
 _SPIDER_DIR = os.environ.get("SPIDER_XHS_DIR", str(Path(__file__).parent / "spider_xhs"))
