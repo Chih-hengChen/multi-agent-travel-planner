@@ -76,6 +76,7 @@ export class BookingSource implements TravelDataSource {
         currency_code: "CNY",
         languagecode: "zh-cn",
         page_number: "1",
+        radius: "15",
       });
       if (params.maxPricePerNight) qs.set("price_max", String(Math.round(params.maxPricePerNight * nights)));
 
