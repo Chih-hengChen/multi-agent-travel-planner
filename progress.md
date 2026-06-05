@@ -45,7 +45,26 @@
 - 后端：ConversationContext.editedPlanSummary + handleEditPlan() + PUT route
 - 前端：编辑模式下活动可拖拽（跨天）、可删除、可添加备注，保存后持久化到 session
 
+### 工具注册表 + 小红书搜索集成 (2026-06-05)
+
+- `68cfe23` feat: 统一工具注册模块 + 小红书搜索 + 8 个注册工具
+- 新增 `src/tools/` 模块：ToolRegistry、RegisteredTool、ToolResult、ToolSource 类型体系
+- 8 个工具注册到 registry：collect_preferences, plan_travel, search_xhs_notes, search_web, search_trains, search_flights, search_hotels, search_attractions
+- LLM 通过 Anthropic tool_use 协议自主选择调用工具
+- XHS 搜索工具支持 fallback：Python 服务不可用时降级到 web search
+- 新增 `xhs-service/` Python FastAPI 微服务（封装 Spider_XHS）
+- stream-handler.ts 重构为 registry 驱动，通用化 requiresUserInput 处理
+- SourceResolver 新增 resolveAttractions() 公开方法
+
+### XHS 服务修复 (2026-06-05)
+
+- `2d8977c` fix: add missing loguru dependency for XHS service
+- Spider_XHS 依赖 loguru 但未声明在 requirements.txt，导致 ImportError 被误报为 "Spider_XHS not found"
+- 改进 _get_api() 错误信息，暴露真实 import 失败原因
+
 ## 下一步待办
 
-- 端到端测试：配置真实 API Key 验证完整流程
+- XHS 服务端到端测试：设置 XHS_COOKIE 后验证搜索返回笔记数据
+- 端到端测试：启动服务验证 12306 高铁查询实际返回车次数据
 - HotelAgent 无 fallback 后需验证 Booking.com API 可用性
+- 12306 可能存在反爬限制，生产环境需观察稳定性
