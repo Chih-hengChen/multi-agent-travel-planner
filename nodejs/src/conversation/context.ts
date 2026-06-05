@@ -58,6 +58,7 @@ export interface ConversationContext {
   selectedHotelName?: string;
 
   planSummary?: PlanSummary;
+  editedPlanSummary?: PlanSummary;
 
   messageHistory: Array<{ role: "user" | "assistant"; content: string }>;
   turnCount: number;

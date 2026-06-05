@@ -141,4 +141,13 @@ export class ConversationOrchestrator {
   async deleteSession(sessionId: string): Promise<void> {
     await this.sessionStore.delete(sessionId);
   }
+
+  async handleEditPlan(sessionId: string, plan: import("../types/index.js").PlanSummary): Promise<void> {
+    const ctx = await this.sessionStore.get(sessionId);
+    if (!ctx) throw new Error("Session not found");
+    ctx.editedPlanSummary = plan;
+    ctx.version++;
+    ctx.updatedAt = Date.now();
+    await this.sessionStore.set(sessionId, ctx);
+  }
 }

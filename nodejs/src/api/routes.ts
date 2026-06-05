@@ -154,4 +154,18 @@ export function registerRoutes(app: FastifyInstance) {
     await orchestrator.deleteSession(sid);
     return reply.send({ ok: true });
   });
+
+  app.put("/api/chat/:sid/plan", async (request, reply) => {
+    const { sid } = (request as any).params as { sid: string };
+    const body = request.body as { plan?: PlanSummary };
+    if (!body?.plan) {
+      return reply.status(400).send({ error: "plan is required" });
+    }
+    try {
+      await orchestrator.handleEditPlan(sid, body.plan);
+      return reply.send({ ok: true });
+    } catch {
+      return reply.status(404).send({ error: "Session not found" });
+    }
+  });
 }
