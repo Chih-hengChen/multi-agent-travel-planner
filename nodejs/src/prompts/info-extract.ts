@@ -28,7 +28,8 @@ ${params.history}
   "travelInterests": ["兴趣1", "兴趣2"],
   "foodPreferences": ["偏好1"],
   "transportPreference": "flight|high_speed_rail|train|no_preference",
-  "specialRequests": "特殊需求"
+  "specialRequests": "特殊需求",
+  "mustVisitAttractions": ["景点名1", "景点名2"]
 }
 
 规则：
@@ -55,6 +56,11 @@ ${params.history}
 - "高铁"/"动车"/"火车" -> transportPreference: "high_speed_rail"
 - "飞机"/"航班"/"机票" -> transportPreference: "flight"
 - "随便"/"都行"/"都可以" -> transportPreference: "no_preference"
+- 用户提到具体景点/地点名称时提取到 mustVisitAttractions 数组
+- "想去故宫、颐和园和国博" -> mustVisitAttractions: ["故宫", "颐和园", "国博"]
+- "还想去雍和宫拜一拜" -> 追加到 mustVisitAttractions
+- "一定要去长城" -> 追加到 mustVisitAttractions
+- 多次对话中提到的景点应累积合并到同一个数组
 - 只返回有把握的字段，不要猜测
 - 返回纯JSON，不要有其他文字`;
 }

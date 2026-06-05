@@ -28,6 +28,15 @@ function buildKeywords(interests?: string[]): string {
   return mapped.join("|");
 }
 
+const CITY_FOOD_MAP: Record<string, { breakfast: string; lunch: string; dinner: string }> = {
+  "北京": { breakfast: "豆浆|油条|包子|豆汁", lunch: "烤鸭|涮肉|炸酱面|京菜", dinner: "烤鸭|涮羊肉|京味菜|老字号" },
+  "成都": { breakfast: "担担面|龙抄手|钟水饺", lunch: "火锅|串串|川菜|麻婆豆腐", dinner: "火锅|川菜|串串香|钵钵鸡" },
+  "上海": { breakfast: "生煎|小笼包|豆浆", lunch: "本帮菜|红烧肉|小笼", dinner: "本帮菜|蟹粉|红烧肉" },
+  "广州": { breakfast: "早茶|肠粉|叉烧包", lunch: "粤菜|煲仔饭|烧腊", dinner: "粤菜|海鲜|煲汤" },
+  "西安": { breakfast: "肉夹馍|胡辣汤|羊肉泡馍", lunch: "面食|biangbiang面|羊肉泡馍", dinner: "陕菜|肉夹馍|凉皮" },
+  "重庆": { breakfast: "小面|酸辣粉", lunch: "火锅|江湖菜|辣子鸡", dinner: "火锅|烤鱼|江湖菜" },
+};
+
 const DINING_KEYWORDS: Record<string, Record<string, string>> = {
   trending: {
     breakfast: "网红早午餐|ins风咖啡厅|精品咖啡",
@@ -91,7 +100,7 @@ export class AmapSource implements TravelDataSource {
   async searchAttractions(params: AttractionSearchParams): Promise<Activity[]> {
     try {
       if (!settings.AMAP_API_KEY) throw new Error("AMAP_API_KEY 未配置");
-      const keywords = buildKeywords(params.interests);
+      const keywords = params.query ?? buildKeywords(params.interests);
       const maxResults = params.maxResults ?? 20;
       const qs = new URLSearchParams({
         key: settings.AMAP_API_KEY,
@@ -133,7 +142,12 @@ export class AmapSource implements TravelDataSource {
     try {
       if (!settings.AMAP_API_KEY) throw new Error("AMAP_API_KEY 未配置");
       const pref = params.diningPreference ?? "mixed";
-      const keywords = DINING_KEYWORDS[pref]?.[params.mealType] ?? "餐厅";
+      let keywords: string;
+      if (pref === "local_specialties" && CITY_FOOD_MAP[params.city]) {
+        keywords = CITY_FOOD_MAP[params.city][params.mealType];
+      } else {
+        keywords = DINING_KEYWORDS[pref]?.[params.mealType] ?? "餐厅";
+      }
       const maxResults = params.maxResults ?? 10;
       const timeSlot = params.mealType === "breakfast" ? "morning" : params.mealType === "lunch" ? "afternoon" : "evening";
       const durationHours = params.mealType === "breakfast" ? 1.0 : params.mealType === "lunch" ? 1.5 : 2.0;

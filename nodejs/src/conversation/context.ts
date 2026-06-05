@@ -55,8 +55,7 @@ export interface ConversationContext {
 
   selectedOutboundId?: string;
   selectedReturnId?: string;
-  selectedHotelId?: string;
-  selectedHotelName?: string;
+  selectedHotel?: Hotel;
 
   planSummary?: PlanSummary;
   editedPlanSummary?: PlanSummary;
@@ -204,7 +203,7 @@ export function toUserPreferences(ctx: ConversationContext): UserPreferences {
 
   const selectedOutboundOpt = findTransportOption(ctx.transportSearchResult?.outbound, ctx.selectedOutboundId);
   const selectedReturnOpt = findTransportOption(ctx.transportSearchResult?.return, ctx.selectedReturnId);
-  const selectedHotelOpt = ctx.hotelOptions?.find((h) => h.name === ctx.selectedHotelName);
+  const selectedHotelOpt = ctx.selectedHotel;
 
   const selectedOutbound = selectedOutboundOpt
     ? selectedOutboundOpt.mode === "train"

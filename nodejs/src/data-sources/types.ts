@@ -20,6 +20,7 @@ export interface HotelSearchParams {
 export interface AttractionSearchParams {
   city: string;
   interests?: string[];
+  query?: string;
   maxResults?: number;
 }
 

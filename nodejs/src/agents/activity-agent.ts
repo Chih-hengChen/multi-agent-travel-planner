@@ -1,9 +1,18 @@
 import type { Logger } from "pino";
-import { ActivitySubType, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState, type UserPreferences } from "../types/index.js";
+import { ActivitySubType, type Activity, type DayPlan, type ActivitySearchResult, type TravelPlanState, type UserPreferences, type GeoLocation } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { BaseAgent } from "./base-agent.js";
 
 const FALLBACK_TRANSIT_COST = 40;
+
+function haversineKm(a?: GeoLocation, b?: GeoLocation): number {
+  if (!a || !b) return 99;
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
 
 export class ActivityAgent extends BaseAgent {
   readonly name = "ActivityAgent";
@@ -14,11 +23,27 @@ export class ActivityAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const days = ActivityAgent.getTravelDays(pref.startDate, pref.endDate);
 
-    const attractions = await this.dataSource.searchAttractions({
+    let mustVisitAttractions: Activity[] = [];
+    if (pref.mustVisitAttractions?.length) {
+      const results = await Promise.all(
+        pref.mustVisitAttractions.map((name) =>
+          this.dataSource.searchAttractions({ city: dest.city, query: name, maxResults: 3 }),
+        ),
+      );
+      mustVisitAttractions = results.flat().filter((a, i, arr) =>
+        arr.findIndex((b) => b.name === a.name) === i,
+      );
+    }
+
+    const genericAttractions = await this.dataSource.searchAttractions({
       city: dest.city,
       interests: pref.interests,
       maxResults: days.length * 3,
     });
+
+    const mustVisitNames = new Set(mustVisitAttractions.map((a) => a.name));
+    const filteredGeneric = genericAttractions.filter((a) => !mustVisitNames.has(a.name));
+    const attractions = [...mustVisitAttractions, ...filteredGeneric];
 
     const [breakfasts, lunches, dinners] = await Promise.all([
       this.dataSource.searchRestaurants({ city: dest.city, mealType: "breakfast", diningPreference: pref.diningPreference as any, maxResults: days.length * 2 }),
@@ -177,70 +202,104 @@ export class ActivityAgent extends BaseAgent {
     city: string,
     date: string,
     fallbackCost: number,
-    localTransitMode: string,
+    _localTransitMode: string,
   ): Promise<Activity[]> {
     if (locatedActivities.length < 2) return [];
-
-    if (localTransitMode === "rental_car") {
-      return [{
-        name: "租车自驾",
-        category: "transit",
-        location: city,
-        durationHours: 1.0,
-        price: Math.round(fallbackCost * 0.8),
-        rating: 8.0,
-        description: `${date} 租车自驾`,
-        timeSlot: "morning",
-        subType: ActivitySubType.TRANSIT,
-      }];
-    }
-
-    if (localTransitMode === "taxi") {
-      const segs: Activity[] = [];
-      for (let i = 0; i < locatedActivities.length - 1; i++) {
-        const from = locatedActivities[i]!;
-        segs.push({
-          name: "打车",
-          category: "transit",
-          location: city,
-          durationHours: 0.5,
-          price: Math.round(fallbackCost / 3),
-          rating: 8.0,
-          description: `${from.name} → ${locatedActivities[i + 1]!.name}`,
-          timeSlot: from.timeSlot,
-          subType: ActivitySubType.TRANSIT,
-        });
-      }
-      return segs;
-    }
-
-    if (!this.dataSource.planTransitRoute) return [];
 
     const transitActs: Activity[] = [];
 
     for (let i = 0; i < locatedActivities.length - 1; i++) {
       const from = locatedActivities[i]!;
       const to = locatedActivities[i + 1]!;
-      if (!from.geoLocation || !to.geoLocation) continue;
+      const distKm = haversineKm(from.geoLocation, to.geoLocation);
+      const distM = Math.round(distKm * 1000);
 
-      try {
-        const route = await this.dataSource.planTransitRoute(from.geoLocation, to.geoLocation, city);
-        if (route) {
+      if (distM < 800) {
+        transitActs.push({
+          name: "步行",
+          category: "transit",
+          location: city,
+          durationHours: Math.round(distM / 500 * 4) / 4,
+          price: 0,
+          rating: 8.0,
+          description: `${from.name} → ${to.name} 步行${distM}米`,
+          timeSlot: from.timeSlot,
+          subType: ActivitySubType.TRANSIT,
+        });
+        continue;
+      }
+
+      if (distM < 3000) {
+        let walked = false;
+        if (this.dataSource.planTransitRoute && from.geoLocation && to.geoLocation) {
+          try {
+            const route = await this.dataSource.planTransitRoute(from.geoLocation, to.geoLocation, city);
+            if (route && (route.mode === "subway" || route.mode === "bus") && route.transfers <= 2) {
+              transitActs.push({
+                name: route.mode === "subway" ? "地铁出行" : "公交出行",
+                category: "transit",
+                location: city,
+                durationHours: Math.round(route.durationMinutes / 15) / 4,
+                price: route.cost,
+                rating: 8.0,
+                description: `${from.name} → ${to.name} ${route.description}`,
+                timeSlot: from.timeSlot,
+                subType: ActivitySubType.TRANSIT,
+              });
+              walked = true;
+            }
+          } catch { /* fall back to walking */ }
+        }
+        if (!walked) {
           transitActs.push({
-            name: route.mode === "taxi" ? "打车" : route.mode === "subway" ? "地铁出行" : "公交出行",
+            name: "步行",
             category: "transit",
             location: city,
-            durationHours: Math.round(route.durationMinutes / 15) / 4,
-            price: route.cost,
+            durationHours: Math.round(distM / 500 * 4) / 4,
+            price: 0,
             rating: 8.0,
-            description: route.description,
+            description: `${from.name} → ${to.name} 步行${distM}米`,
             timeSlot: from.timeSlot,
             subType: ActivitySubType.TRANSIT,
           });
-          continue;
         }
-      } catch (err) {
-        this.log.warn({ err }, "路线规划失败，降级为固定成本");
+        continue;
+      }
+
+      if (this.dataSource.planTransitRoute && from.geoLocation && to.geoLocation) {
+        try {
+          const route = await this.dataSource.planTransitRoute(from.geoLocation, to.geoLocation, city);
+          if (route && (route.mode === "subway" || route.mode === "bus") && route.transfers <= 2) {
+            transitActs.push({
+              name: route.mode === "subway" ? "地铁出行" : "公交出行",
+              category: "transit",
+              location: city,
+              durationHours: Math.round(route.durationMinutes / 15) / 4,
+              price: route.cost,
+              rating: 8.0,
+              description: `${from.name} → ${to.name} ${route.description}`,
+              timeSlot: from.timeSlot,
+              subType: ActivitySubType.TRANSIT,
+            });
+            continue;
+          }
+          if (route) {
+            transitActs.push({
+              name: "打车",
+              category: "transit",
+              location: city,
+              durationHours: Math.round(route.durationMinutes / 15) / 4,
+              price: route.cost,
+              rating: 8.0,
+              description: `${from.name} → ${to.name} ${route.description}`,
+              timeSlot: from.timeSlot,
+              subType: ActivitySubType.TRANSIT,
+            });
+            continue;
+          }
+        } catch (err) {
+          this.log.warn({ err }, "路线规划失败，降级为固定成本");
+        }
       }
 
       transitActs.push({

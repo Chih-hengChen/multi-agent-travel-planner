@@ -137,6 +137,7 @@ export class InfoExtractor {
         "foodPreferences",
         "transportPreference",
         "specialRequests",
+        "mustVisitAttractions",
       ];
 
       for (const key of allowedKeys) {
