@@ -110,7 +110,7 @@ export class AmapSource implements TravelDataSource {
       const data = await resp.json() as { status: string; pois: AmapPoi[]; info?: string };
       if (data.status !== "1") throw new Error(`高德 API 错误: ${data.info ?? "unknown"}`);
 
-      return (data.pois ?? []).map((poi) => ({
+      return (data.pois ?? []).map((poi): Activity => ({
         name: poi.name,
         category: poi.type?.split(";")[0] ?? "景点",
         location: poi.address ?? params.city,
@@ -121,7 +121,7 @@ export class AmapSource implements TravelDataSource {
         timeSlot: "",
         subType: "attraction" as ActivitySubType,
         geoLocation: parseGeoLocation(poi.location),
-      }) satisfies Activity);
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[AmapSource] 景点搜索失败: ${msg}`);
@@ -157,7 +157,7 @@ export class AmapSource implements TravelDataSource {
       const data = await resp.json() as { status: string; pois: AmapPoi[]; info?: string };
       if (data.status !== "1") throw new Error(`高德 API 错误: ${data.info ?? "unknown"}`);
 
-      return (data.pois ?? []).map((poi) => ({
+      return (data.pois ?? []).map((poi): Activity => ({
         name: poi.name,
         category: "dining",
         location: poi.address ?? params.city,
@@ -169,7 +169,7 @@ export class AmapSource implements TravelDataSource {
         subType: ActivitySubType.DINING,
         mealType: params.mealType,
         geoLocation: parseGeoLocation(poi.location),
-      }) satisfies Activity);
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[AmapSource] 餐饮搜索失败: ${msg}`);

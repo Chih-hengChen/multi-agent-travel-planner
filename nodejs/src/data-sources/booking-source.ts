@@ -114,7 +114,7 @@ export class BookingSource implements TravelDataSource {
           pricePerNight: Math.round(perNight),
           amenities: [],
           distanceToCenterKm: 0,
-        } satisfies Hotel;
+        } as Hotel;
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
