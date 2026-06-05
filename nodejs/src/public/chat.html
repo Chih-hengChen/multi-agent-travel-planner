@@ -28,6 +28,17 @@
   .state-badge{font-size:0.65rem;padding:2px 8px;border-radius:9999px;font-weight:600;white-space:nowrap}
   .pulse{animation:pulse 1.5s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .act-draggable{cursor:grab;transition:opacity .2s}
+  .act-draggable:active{cursor:grabbing}
+  .act-draggable.dragging{opacity:.4}
+  .act-drop-zone{min-height:8px;transition:background .15s}
+  .act-drop-zone.drag-over{background:#dbeafe;border-radius:4px}
+  .act-edit-card{border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin:4px 0;background:#fff}
+  .act-edit-card .note-input{border:1px solid #e2e8f0;border-radius:4px;padding:2px 6px;font-size:0.75rem;width:100%;margin-top:4px}
+  .act-edit-card .note-input:focus{outline:none;border-color:#3b82f6}
+  .act-edit-card .del-btn{cursor:pointer;color:#9ca3af;font-size:0.75rem;padding:2px 6px;border-radius:4px}
+  .act-edit-card .del-btn:hover{color:#ef4444;background:#fef2f2}
+
 </style>
 </head>
 <body class="bg-gray-50 h-screen flex flex-col">
@@ -76,6 +87,10 @@ const progressBarFill = document.getElementById('progressBarFill');
 
 let sessionId = localStorage.getItem('travel_session_id');
 let streaming = false;
+let editMode = false;
+let editingPlan = null;
+let currentPlanData = null;
+let dragSrcInfo = null;
 
 marked.setOptions({ breaks: true });
 
@@ -156,12 +171,20 @@ function finalizeBotBubble(bubble, text, extraHtml) {
 }
 
 function renderPlanCard(plan) {
+  currentPlanData = plan;
   const pct = plan.budget > 0 ? Math.min((plan.totalCost / plan.budget) * 100, 100) : 0;
   const barColor = plan.withinBudget ? 'bg-green-500' : 'bg-red-500';
   const statusText = plan.withinBudget ? '预算内 ✓' : `超支 ¥${(plan.totalCost - plan.budget).toLocaleString()}`;
+  const editBtn = editMode
+    ? `<div class="flex gap-2 mb-2"><button onclick="savePlanEdit()" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">保存</button><button onclick="cancelPlanEdit()" class="text-xs border px-3 py-1 rounded-lg hover:bg-gray-100">取消</button></div>`
+    : `<button onclick="enterEditMode()" class="text-xs text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-50 float-right">编辑行程</button>`;
   let html = `
     <div class="plan-card">
-      <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄 高铁' : '✈️ 航班'}</span></h3>
+      <div class="flex items-center justify-between">
+        <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄 高铁' : '✈️ 航班'}</span></h3>
+        ${editMode ? '' : editBtn}
+      </div>
+      ${editMode ? editBtn : ''}
       <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">${plan.transportMode === 'train' ? '高铁' : '机票'}</div><div class="font-bold text-blue-600">¥${(plan.transportMode === 'train' ? plan.trainCost : plan.flightCost).toLocaleString()}</div></div>
         <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
@@ -237,14 +260,18 @@ function renderDataSources(plan) {
 
   if (plan.dayPlans?.length > 0) {
     html += '<div class="mt-2"><div class="text-xs font-semibold text-purple-700 mb-1">📅 每日行程</div>';
-    for (const day of plan.dayPlans) {
-      html += `<div class="text-xs mt-1"><span class="font-semibold text-gray-600">${esc(day.date)}</span></div>`;
-      html += '<div class="text-xs space-y-0.5">';
-      for (const a of day.activities) {
-        const icon = a.subType === 'dining' ? '🍽️' : a.subType === 'transit' ? '🚌' : '📍';
-        html += `<div class="bg-white rounded px-1.5 py-1 flex justify-between"><span>${icon} ${esc(a.name)}</span><span class="text-gray-500">¥${a.price}</span></div>`;
+    if (editMode) {
+      html += renderEditableDayPlans(editingPlan);
+    } else {
+      for (const day of plan.dayPlans) {
+        html += `<div class="text-xs mt-1"><span class="font-semibold text-gray-600">${esc(day.date)}</span></div>`;
+        html += '<div class="text-xs space-y-0.5">';
+        for (const a of day.activities) {
+          const icon = a.subType === 'dining' ? '🍽️' : a.subType === 'transit' ? '🚌' : '📍';
+          html += `<div class="bg-white rounded px-1.5 py-1 flex justify-between"><span>${icon} ${esc(a.name)}</span><span class="text-gray-500">¥${a.price}</span></div>`;
+        }
+        html += '</div>';
       }
-      html += '</div>';
     }
   } else {
     html += '<div class="text-xs text-gray-400 mt-1">📅 行程：暂无数据</div>';
@@ -252,6 +279,129 @@ function renderDataSources(plan) {
 
   html += '</div>';
   return html;
+}
+
+function renderEditableDayPlans(plan) {
+  let html = '';
+  for (let di = 0; di < plan.dayPlans.length; di++) {
+    const day = plan.dayPlans[di];
+    html += `<div class="text-xs mt-2"><span class="font-semibold text-gray-600">${esc(day.date)}</span></div>`;
+    html += `<div class="day-activities" data-day="${di}">`;
+    for (let ai = 0; ai < day.activities.length; ai++) {
+      const a = day.activities[ai];
+      const icon = a.subType === 'dining' ? '🍽️' : a.subType === 'transit' ? '🚌' : '📍';
+      const note = a.note || '';
+      html += `<div class="act-edit-card act-draggable" draggable="true" data-day="${di}" data-idx="${ai}"
+        ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)">
+        <div class="flex justify-between items-center">
+          <span class="flex items-center gap-1"><span class="text-gray-400 cursor-grab">⠿</span>${icon} ${esc(a.name)} <span class="text-gray-400">¥${a.price}</span></span>
+          <span class="del-btn" onclick="deleteActivity(${di},${ai},this)">删除</span>
+        </div>
+        <input class="note-input" placeholder="添加备注..." value="${esc(note)}" oninput="updateNote(${di},${ai},this.value)">
+      </div>`;
+    }
+    html += `<div class="act-drop-zone" data-day="${di}" data-idx="${day.activities.length}" ondragover="onDragOver(event)" ondrop="onDrop(event)"></div>`;
+    html += '</div>';
+  }
+  return html;
+}
+
+function onDragStart(e) {
+  const el = e.target.closest('.act-draggable');
+  if (!el) return;
+  el.classList.add('dragging');
+  dragSrcInfo = { day: +el.dataset.day, idx: +el.dataset.idx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', '');
+}
+
+function onDragEnd(e) {
+  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  dragSrcInfo = null;
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const zone = e.target.closest('.act-drop-zone,.act-draggable');
+  if (zone) {
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    zone.classList.add('drag-over');
+  }
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  if (!dragSrcInfo || !editingPlan) return;
+
+  const target = e.target.closest('.act-drop-zone,.act-draggable');
+  if (!target) return;
+  const toDay = +target.dataset.day;
+  const toIdx = +target.dataset.idx;
+  const fromDay = dragSrcInfo.day;
+  const fromIdx = dragSrcInfo.idx;
+
+  if (fromDay === toDay && fromIdx === toIdx) return;
+
+  const act = editingPlan.dayPlans[fromDay].activities.splice(fromIdx, 1)[0];
+  const insertIdx = fromDay === toDay && fromIdx < toIdx ? toIdx - 1 : toIdx;
+  editingPlan.dayPlans[toDay].activities.splice(insertIdx, 0, act);
+
+  rerenderEditCard();
+}
+
+function deleteActivity(di, ai, btn) {
+  if (!editingPlan) return;
+  editingPlan.dayPlans[di].activities.splice(ai, 1);
+  rerenderEditCard();
+}
+
+function updateNote(di, ai, value) {
+  if (!editingPlan) return;
+  editingPlan.dayPlans[di].activities[ai].note = value;
+}
+
+function enterEditMode() {
+  if (!currentPlanData) return;
+  editMode = true;
+  editingPlan = JSON.parse(JSON.stringify(currentPlanData));
+  rerenderEditCard();
+}
+
+function cancelPlanEdit() {
+  editMode = false;
+  editingPlan = null;
+  rerenderEditCard();
+}
+
+async function savePlanEdit() {
+  if (!editingPlan || !sessionId) return;
+  try {
+    const resp = await fetch(`/api/chat/${sessionId}/plan`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: editingPlan }),
+    });
+    if (!resp.ok) throw new Error('Save failed');
+    currentPlanData = editingPlan;
+    editMode = false;
+    editingPlan = null;
+    rerenderEditCard();
+  } catch (err) {
+    alert('保存失败，请重试');
+  }
+}
+
+function rerenderEditCard() {
+  const plan = editMode ? editingPlan : currentPlanData;
+  if (!plan) return;
+  const cards = document.querySelectorAll('.plan-card');
+  if (cards.length === 0) return;
+  const last = cards[cards.length - 1];
+  last.outerHTML = renderPlanCard(plan);
+  scrollBottom();
 }
 
 function renderTransportCard(data) {
