@@ -75,3 +75,5 @@ golang/bin/
 
 ai-tutor
 **/gaode/
+**/node_modules/
+**/logs/
