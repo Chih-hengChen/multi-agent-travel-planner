@@ -5,6 +5,7 @@ import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
+import { Train12306Source } from "../data-sources/train12306-source.js";
 import { FallbackDataSource } from "../data-sources/fallback-data-source.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { ParallelExecutor } from "./parallel.js";
@@ -15,6 +16,7 @@ class CompositeDataSource implements TravelDataSource {
     private readonly flights: TravelDataSource,
     private readonly hotels: TravelDataSource,
     private readonly attractions: TravelDataSource,
+    private readonly trains: TravelDataSource,
   ) {}
 
   searchFlights(params: Parameters<TravelDataSource["searchFlights"]>[0]) {
@@ -27,7 +29,7 @@ class CompositeDataSource implements TravelDataSource {
     return this.attractions.searchAttractions(params);
   }
   searchTrains(params: Parameters<TravelDataSource["searchTrains"]>[0]) {
-    return this.flights.searchTrains(params);
+    return this.trains.searchTrains(params);
   }
   searchRestaurants(params: Parameters<TravelDataSource["searchRestaurants"]>[0]) {
     return this.attractions.searchRestaurants(params);
@@ -49,6 +51,7 @@ export class TravelPlanningPipeline {
       new FallbackDataSource(new AmadeusSource(), webSearch, logger),
       new FallbackDataSource(new BookingSource(), webSearch, logger),
       new FallbackDataSource(new AmapSource(), webSearch, logger),
+      new FallbackDataSource(new Train12306Source(logger), webSearch, logger),
     );
 
     const flightAgent = new FlightAgent(logger, dataSource);
