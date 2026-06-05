@@ -83,6 +83,13 @@
 - 修复：info-extract 拆分去程/返程偏好提取 + turn-handler 独立搜索 + enrichChineseNames 品牌匹配 + diningPreference 默认 local_specialties
 - Pipeline 中 ActivityAgent → LLMPlanAgent
 
+### Firecrawl 搜索兜底 (2026-06-05)
+
+- `86b7132` feat: Firecrawl API 作为 web search daemon 不可用时的自动兜底
+- daemon 失败/空时自动调用 Firecrawl `/v2/search`（搜索+markdown 一步返回）
+- 配置：`FIRECRAWL_API_KEY` 环境变量，`FIRECRAWL_ENABLED` 开关
+- 无新依赖，改动集中在 `WebSearchSource` 内部
+
 ## 下一步待办
 
 - 端到端测试：启动服务验证去程高铁返程飞机场景
