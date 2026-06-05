@@ -2,6 +2,7 @@
 
 import os
 import sys
+from typing import List, Dict, Any
 from pathlib import Path
 
 _COOKIE = os.environ.get("XHS_COOKIE", "")
@@ -19,14 +20,16 @@ def _ensure_cookie():
 def _get_api():
     try:
         from apis.xhs_pc_apis import XHS_Apis
-    except ImportError:
+    except ImportError as e:
         raise ConnectionError(
-            "Spider_XHS not found. Set SPIDER_XHS_DIR or place Spider_XHS code in ./spider_xhs/"
+            f"Spider_XHS import failed: {e}. "
+            "Set SPIDER_XHS_DIR or place Spider_XHS code in ./spider_xhs/. "
+            "Ensure dependencies are installed: pip install -r requirements.txt"
         )
     return XHS_Apis()
 
 
-def search_notes(query: str, limit: int = 5) -> list[dict]:
+def search_notes(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     _ensure_cookie()
     api = _get_api()
 
@@ -70,7 +73,7 @@ def search_notes(query: str, limit: int = 5) -> list[dict]:
     return results
 
 
-def get_note_detail(url: str) -> dict:
+def get_note_detail(url: str) -> Dict[str, Any]:
     _ensure_cookie()
     api = _get_api()
 
