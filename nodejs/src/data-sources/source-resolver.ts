@@ -2,6 +2,7 @@ import type { TravelDataSource, FlightSearchParams, HotelSearchParams, TrainSear
 import type { Flight, Hotel, Train, Activity } from "../types/index.js";
 import pino, { type Logger } from "pino";
 import { settings } from "../config/settings.js";
+import { logWithSession } from "../logging/session-context.js";
 
 export type DataType = "train" | "flight" | "hotel" | "attraction";
 
@@ -47,6 +48,8 @@ export class SourceResolver {
       const fn = source[method];
       if (typeof fn !== "function") continue;
 
+      logWithSession("source_call", { type, sourceIndex: i, sourceName: source.constructor.name, params });
+
       try {
         const result = await Promise.race([
           (fn as Function).call(source, params),
@@ -57,10 +60,13 @@ export class SourceResolver {
 
         if (Array.isArray(result) && result.length > 0) {
           this.log.info({ type, sourceIndex: i, count: result.length }, "Source resolved");
+          logWithSession("source_result", { type, sourceIndex: i, count: result.length, success: true });
           return result;
         }
+        logWithSession("source_result", { type, sourceIndex: i, count: 0, success: false });
       } catch (err) {
         this.log.warn({ type, sourceIndex: i, err: String(err) }, "Source failed, trying next");
+        logWithSession("source_result", { type, sourceIndex: i, error: String(err), success: false });
       }
     }
 

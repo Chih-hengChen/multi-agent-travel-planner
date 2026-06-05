@@ -19,6 +19,7 @@ import { AmapSource } from "../data-sources/amap-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { settings } from "../config/settings.js";
 import type { PlanSummary, Flight, Train, Hotel } from "../types/index.js";
+import { withSessionId } from "../logging/session-context.js";
 
 export interface TurnResult {
   newState: ConversationState;
@@ -214,6 +215,7 @@ export class TurnHandler {
 
     const introText = `正在为您搜索${ctx.departureCity ?? ""}到${ctx.destination ?? ""}的交通方式...`;
 
+    return withSessionId(ctx.sessionId, async () => {
     try {
       const resolver = this.createSourceResolver();
       const prefs = toUserPreferences(ctx);
@@ -299,6 +301,7 @@ export class TurnHandler {
         error: msg,
       };
     }
+    });
   }
 
   private async searchHotels(ctx: ConversationContext): Promise<TurnResult> {
@@ -307,6 +310,7 @@ export class TurnHandler {
 
     const introText = `正在为您搜索${ctx.destination ?? ""}的酒店...`;
 
+    return withSessionId(ctx.sessionId, async () => {
     try {
       const resolver = this.createSourceResolver();
       const numDays = ctx.numDays ?? 4;
@@ -355,6 +359,7 @@ export class TurnHandler {
         error: msg,
       };
     }
+    });
   }
 
   private async runPipeline(ctx: ConversationContext): Promise<TurnResult> {
@@ -363,6 +368,7 @@ export class TurnHandler {
 
     const introText = `好的，正在为您规划${ctx.destination ?? ""}的完整行程，请稍候...`;
 
+    return withSessionId(ctx.sessionId, async () => {
     try {
       const prefs = toUserPreferences(ctx);
       const state = await this.pipeline.run(prefs);
@@ -396,6 +402,7 @@ export class TurnHandler {
         error: msg,
       };
     }
+    });
   }
 
   private createSourceResolver(): SourceResolver {

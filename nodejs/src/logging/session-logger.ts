@@ -16,6 +16,12 @@ export type LogEventType =
   | "info_extracted"
   | "llm_request"
   | "llm_response"
+  | "agent_start"
+  | "agent_done"
+  | "tool_call"
+  | "tool_result"
+  | "source_call"
+  | "source_result"
   | "error";
 
 interface LogEntry {

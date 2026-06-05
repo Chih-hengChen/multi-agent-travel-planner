@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { TravelPlanState } from "../types/index.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { settings } from "../config/settings.js";
+import { logWithSession } from "../logging/session-context.js";
 
 const NOOP_SOURCE: TravelDataSource = {
   searchFlights: async () => [],
@@ -23,21 +24,77 @@ export abstract class BaseAgent {
 
   async run(state: TravelPlanState): Promise<TravelPlanState> {
     this.log.info({ agent: this.name }, "开始执行...");
+    logWithSession("agent_start", {
+      agent: this.name,
+      input: this.summarizeInput(state),
+    });
+
     try {
       state = await this.execute(state);
       this.log.info({ agent: this.name }, "执行完成");
+      logWithSession("agent_done", {
+        agent: this.name,
+        output: this.summarizeOutput(state),
+      });
     } catch (exc) {
       const msg = exc instanceof Error ? exc.message : String(exc);
       this.log.error({ agent: this.name, err: msg }, "执行失败");
       state.errorMessages.push(`${this.name}: ${msg}`);
+      logWithSession("agent_done", {
+        agent: this.name,
+        error: msg,
+      });
     }
     return state;
+  }
+
+  private summarizeInput(state: TravelPlanState): Record<string, unknown> {
+    const p = state.preferences;
+    return {
+      planningState: state.state,
+      destination: state.selectedDestination?.city ?? p?.preferredDestination ?? "",
+      departureCity: p?.departureCity ?? "",
+      startDate: p?.startDate ?? "",
+      endDate: p?.endDate ?? "",
+      budget: p?.budget,
+      numTravelers: p?.numTravelers,
+    };
+  }
+
+  private summarizeOutput(state: TravelPlanState): Record<string, unknown> {
+    return {
+      planningState: state.state,
+      transportMode: state.transportMode,
+      trainOutbound: state.trainOutbound?.trainNo,
+      trainReturn: state.trainReturn?.trainNo,
+      flightCost: state.flightResult?.totalFlightCost,
+      hotelName: state.hotelResult?.recommended?.name,
+      hotelCost: state.hotelResult?.totalHotelCost,
+      activityDays: state.activityResult?.dayPlans.length,
+      activityCost: state.activityResult?.totalActivityCost,
+      totalCost: state.budgetBreakdown?.totalCost,
+      withinBudget: state.budgetBreakdown?.isWithinBudget,
+      errors: state.errorMessages,
+    };
   }
 
   protected abstract execute(state: TravelPlanState): Promise<TravelPlanState>;
 
   protected async callLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {
-    return this.realLlm(prompt, systemPrompt, model);
+    const usedModel = model ?? settings.LLM_MODEL;
+    logWithSession("llm_request", {
+      agent: this.name,
+      model: usedModel,
+      systemPrompt: systemPrompt?.slice(0, 200),
+      messages: [{ role: "user", content: prompt.slice(0, 500) }],
+    });
+    const result = await this.realLlm(prompt, systemPrompt, model);
+    logWithSession("llm_response", {
+      agent: this.name,
+      model: usedModel,
+      response: result.slice(0, 500),
+    });
+    return result;
   }
 
   private async realLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {

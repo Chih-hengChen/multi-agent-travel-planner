@@ -1,5 +1,6 @@
 import type { ToolDef } from "../api/llm-client.js";
 import type { RegisteredTool, ToolResult } from "./types.js";
+import { logWithSession } from "../logging/session-context.js";
 
 export class ToolRegistry {
   private readonly tools = new Map<string, RegisteredTool>();
@@ -30,19 +31,30 @@ export class ToolRegistry {
       return { success: false, data: null, error: `Unknown tool: ${name}` };
     }
 
+    logWithSession("tool_call", { tool: name, input });
+
     const timeout = tool.metadata?.timeout ?? 30_000;
+    let result: ToolResult;
     try {
-      const result = await Promise.race([
+      result = await Promise.race([
         tool.execute(input),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Tool ${name} timed out after ${timeout}ms`)), timeout),
         ),
       ]);
-      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, data: null, error: msg };
+      result = { success: false, data: null, error: msg };
     }
+
+    logWithSession("tool_result", {
+      tool: name,
+      success: result.success,
+      dataKeys: result.data ? Object.keys(result.data as object) : [],
+      error: result.error,
+    });
+
+    return result;
   }
 
   has(name: string): boolean {
