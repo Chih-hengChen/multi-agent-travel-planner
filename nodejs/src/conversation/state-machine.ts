@@ -68,6 +68,7 @@ export interface FieldContext {
   budget?: number;
   accommodationStyle?: string;
   travelInterests?: string[];
+  transportPreference?: string;
   turnCount: number;
 }
 
@@ -87,7 +88,8 @@ export function advanceState(
   const preferencesComplete =
     ctx.budget != null &&
     ctx.accommodationStyle &&
-    ctx.travelInterests?.length;
+    ctx.travelInterests?.length &&
+    ctx.transportPreference;
 
   if (preferencesComplete || ctx.turnCount >= maxGatheringTurns) {
     return ConversationState.SEARCHING_TRANSPORT;
