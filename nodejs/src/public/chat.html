@@ -527,6 +527,7 @@ async function goBackToTransport(btn) {
 async function postSelect(body, botBubble) {
   let fullText = '';
   let planData = null;
+  let rendered = false;
 
   try {
     const resp = await fetch(`/api/chat/${sessionId}/select`, {
@@ -566,10 +567,12 @@ async function postSelect(body, botBubble) {
             } else if (currentEvent === 'state_change') {
               updateStateUI(data.state);
             } else if (currentEvent === 'transport_options') {
+              rendered = true;
               botBubble.classList.remove('typing');
               botBubble.innerHTML = marked.parse(fullText) + renderTransportCard(data);
               scrollBottom();
             } else if (currentEvent === 'hotel_options') {
+              rendered = true;
               botBubble.classList.remove('typing');
               botBubble.innerHTML = marked.parse(fullText) + renderHotelCard(data);
               scrollBottom();
@@ -584,8 +587,10 @@ async function postSelect(body, botBubble) {
       }
     }
 
-    const planCardHtml = planData ? renderPlanCard(planData) : '';
-    finalizeBotBubble(botBubble, fullText, planCardHtml);
+    if (!rendered) {
+      const planCardHtml = planData ? renderPlanCard(planData) : '';
+      finalizeBotBubble(botBubble, fullText, planCardHtml);
+    }
   } catch (err) {
     finalizeBotBubble(botBubble, '网络错误，请重试', null);
   }
