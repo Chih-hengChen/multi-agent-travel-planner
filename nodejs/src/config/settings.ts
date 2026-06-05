@@ -15,6 +15,7 @@ export const settings = Object.freeze({
   API_PORT: parseInt(process.env.API_PORT ?? "3000", 10),
   LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
   RAPIDAPI_KEY: process.env.RAPIDAPI_KEY ?? "",
+  RAPIDAPI_HOST: process.env.RAPIDAPI_HOST ?? "booking-com15.p.rapidapi.com",
   AMAP_API_KEY: process.env.AMAP_API_KEY ?? "",
   SESSION_TTL_MS: parseInt(process.env.SESSION_TTL_MS ?? "7200000", 10),
   MAX_CONVERSATION_TURNS: parseInt(process.env.MAX_CONVERSATION_TURNS ?? "20", 10),

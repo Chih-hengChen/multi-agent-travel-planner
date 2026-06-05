@@ -33,6 +33,19 @@ function getCoords(city: string): { lat: number; lon: number } | null {
   return CITY_COORDS[city] ?? null;
 }
 
+interface ApiHotel {
+  hotel_name: string;
+  class?: number;
+  review_score?: number;
+  min_total_price?: number;
+  currencycode?: string;
+  composite_price_breakdown?: {
+    gross_amount_per_night?: { value?: number };
+  };
+  longitude?: number;
+  latitude?: number;
+}
+
 export class BookingSource implements TravelDataSource {
   async searchFlights(_params: FlightSearchParams): Promise<never[]> {
     return [];
@@ -40,51 +53,10 @@ export class BookingSource implements TravelDataSource {
 
   async searchHotels(params: HotelSearchParams): Promise<Hotel[]> {
     try {
-      if (!settings.RAPIDAPI_KEY) {
-        throw new Error("RAPIDAPI_KEY 未配置");
-      }
+      if (!settings.RAPIDAPI_KEY) return [];
+
       const coords = getCoords(params.city);
       if (!coords) return [];
-
-      const qs = new URLSearchParams({
-        latitude: String(coords.lat),
-        longitude: String(coords.lon),
-        checkin: params.checkIn,
-        checkout: params.checkOut,
-        adults_number: String(params.adults),
-        room_number: "1",
-        units: "metric",
-        order_by: "popularity",
-        page_number: "0",
-      });
-      if (params.maxPricePerNight) qs.set("price_max", String(Math.round(params.maxPricePerNight)));
-
-      const resp = await fetch(
-        `https://booking-com.p.rapidapi.com/v1/hotels/search-by-coordinates?${qs}`,
-        {
-          headers: {
-            "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
-            "X-RapidAPI-Host": "booking-com.p.rapidapi.com",
-          },
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`Booking.com search failed (${resp.status}): ${text}`);
-      }
-      const data = await resp.json() as {
-        result: Array<{
-          hotel_name: string;
-          address?: string;
-          class: number;
-          review_score: number;
-          min_total_price?: number;
-          currencycode?: string;
-          distance_to_cc?: string;
-          hotel_facilities?: string[];
-        }>;
-      };
 
       const nights = Math.max(
         1,
@@ -93,18 +65,54 @@ export class BookingSource implements TravelDataSource {
         ),
       );
 
-      return (data.result ?? []).map((h) => {
-        const total = h.min_total_price ?? 0;
-        const perNight = total > 0 ? Math.round(total / nights) : 0;
+      const qs = new URLSearchParams({
+        latitude: String(coords.lat),
+        longitude: String(coords.lon),
+        arrival_date: params.checkIn,
+        departure_date: params.checkOut,
+        adults: String(params.adults),
+        room_qty: "1",
+        units: "metric",
+        currency_code: "CNY",
+        languagecode: "zh-cn",
+        page_number: "1",
+      });
+      if (params.maxPricePerNight) qs.set("price_max", String(Math.round(params.maxPricePerNight * nights)));
+
+      const resp = await fetch(
+        `https://${settings.RAPIDAPI_HOST}/api/v1/hotels/searchHotelsByCoordinates?${qs}`,
+        {
+          headers: {
+            "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
+            "X-RapidAPI-Host": settings.RAPIDAPI_HOST,
+          },
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Booking search failed (${resp.status}): ${text}`);
+      }
+
+      const body = await resp.json() as {
+        status?: boolean;
+        data?: { result?: ApiHotel[] };
+      };
+
+      const hotels = body.data?.result ?? [];
+
+      return hotels.map((h) => {
+        const perNight = h.composite_price_breakdown?.gross_amount_per_night?.value
+          ?? (h.min_total_price ? h.min_total_price / nights : 0);
         return {
-          name: h.hotel_name,
+          name: h.hotel_name ?? "",
           city: params.city,
-          address: h.address ?? "",
+          address: "",
           starRating: h.class ?? 3,
           userRating: (h.review_score ?? 0) / 2,
-          pricePerNight: perNight,
-          amenities: (h.hotel_facilities ?? []).slice(0, 8),
-          distanceToCenterKm: parseFloat(h.distance_to_cc?.replace(/[^\d.]/g, "") ?? "0") || 0,
+          pricePerNight: Math.round(perNight),
+          amenities: [],
+          distanceToCenterKm: 0,
         } satisfies Hotel;
       });
     } catch (err) {
