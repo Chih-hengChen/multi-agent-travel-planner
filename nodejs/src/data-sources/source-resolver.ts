@@ -1,14 +1,15 @@
-import type { TravelDataSource, FlightSearchParams, HotelSearchParams, TrainSearchParams } from "./types.js";
-import type { Flight, Hotel, Train } from "../types/index.js";
+import type { TravelDataSource, FlightSearchParams, HotelSearchParams, TrainSearchParams, AttractionSearchParams } from "./types.js";
+import type { Flight, Hotel, Train, Activity } from "../types/index.js";
 import pino, { type Logger } from "pino";
 import { settings } from "../config/settings.js";
 
-export type DataType = "train" | "flight" | "hotel";
+export type DataType = "train" | "flight" | "hotel" | "attraction";
 
 const METHOD_MAP: Record<DataType, keyof TravelDataSource> = {
   train: "searchTrains",
   flight: "searchFlights",
   hotel: "searchHotels",
+  attraction: "searchAttractions",
 };
 
 export class SourceResolver {
@@ -32,6 +33,10 @@ export class SourceResolver {
 
   async resolveHotels(params: HotelSearchParams): Promise<Hotel[]> {
     return this.resolve("hotel", params) as Promise<Hotel[]>;
+  }
+
+  async resolveAttractions(params: AttractionSearchParams): Promise<Activity[]> {
+    return this.resolve("attraction", params) as Promise<Activity[]>;
   }
 
   private async resolve(type: DataType, params: unknown): Promise<unknown[]> {

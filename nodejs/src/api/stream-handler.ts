@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { streamChat, type Message, type ContentBlock } from "./llm-client.js";
-import { TOOLS, executeTool } from "./tools.js";
+import { registry } from "./tools.js";
 import type { ConversationOrchestrator } from "../orchestrator/conversation-orchestrator.js";
 import * as chatSystemPrompt from "../prompts/chat-system.js";
 
@@ -54,11 +54,12 @@ async function runAgentLoop(
   reply: FastifyReply,
 ): Promise<void> {
   const maxRounds = 5;
+  const toolDefs = registry.getToolDefs();
 
   for (let round = 0; round < maxRounds; round++) {
     const { events, assistantContent } = await streamChat(
       messages,
-      TOOLS,
+      toolDefs,
       buildSystemPrompt(),
       (text) => writeSSE(reply, "text_delta", { text }),
     );
@@ -77,28 +78,38 @@ async function runAgentLoop(
         input: toolEvent.input,
       });
 
-      if (toolEvent.name === "collect_preferences") {
-        const r = await executeTool(toolEvent.name, toolEvent.input) as Record<string, unknown>;
-        writeSSE(reply, "needs_input", {
-          tool_use_id: toolEvent.id,
-          destination: String(r.destination ?? ""),
-          departure_city: String(r.departure_city ?? ""),
-          start_date: String(r.start_date ?? ""),
-          end_date: String(r.end_date ?? ""),
-          budget: Number(r.budget) || 0,
-          num_travelers: Number(r.num_travelers) || 0,
-        });
+      const toolMeta = registry.get(toolEvent.name)?.metadata;
+
+      if (toolMeta?.requiresUserInput) {
+        const result = await registry.execute(toolEvent.name, toolEvent.input);
+        if (result.success) {
+          const d = result.data as Record<string, unknown>;
+          writeSSE(reply, "needs_input", {
+            tool_use_id: toolEvent.id,
+            destination: String(d.destination ?? ""),
+            departure_city: String(d.departure_city ?? ""),
+            start_date: String(d.start_date ?? ""),
+            end_date: String(d.end_date ?? ""),
+            budget: Number(d.budget) || 0,
+            num_travelers: Number(d.num_travelers) || 0,
+          });
+        }
         return;
       }
 
-      const result = await executeTool(toolEvent.name, toolEvent.input);
+      const result = await registry.execute(toolEvent.name, toolEvent.input);
+      const resultPayload = result.success ? result.data : { error: result.error };
 
-      writeSSE(reply, "tool_result", { tool: toolEvent.name, result });
+      if (result.sources && result.sources.length > 0) {
+        writeSSE(reply, "reference_sources", { sources: result.sources });
+      }
+
+      writeSSE(reply, "tool_result", { tool: toolEvent.name, result: resultPayload });
 
       const toolResultBlock: ContentBlock = {
         type: "tool_result",
         tool_use_id: toolEvent.id,
-        content: JSON.stringify(result),
+        content: JSON.stringify(resultPayload),
       };
       messages.push({ role: "user", content: [toolResultBlock] });
     }
