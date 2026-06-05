@@ -29,8 +29,23 @@
 - 前端选择卡片：radio 交通选项 + 酒店卡片，支持重新搜索和回退
 - 信息收集完毕自动触发交通搜索 → 用户选择 → 酒店搜索 → 用户选择 → 行程规划
 
+### WebSearch 真实搜索集成 + 城市知识缓存 (2026-06-05)
+
+- `843d8da` fix: add baidu engine for better Chinese train results（sogou 反爬封禁，bing 返回无关百科）
+- `45dee37` fix: multi-query train search with relevance check and LLM fallback
+- `14606c1` feat: cache city tourism knowledge from baike for LLM attraction extraction
+- 搜索引擎优先级：baidu > sogou > bing
+- 城市百科知识缓存（24h TTL），景点/餐厅搜索自动附加百科旅游上下文
+- 多轮查询 + 相关性检测 + LLM 兜底：列车搜索尝试 3 种 query，不相关时用 LLM 知识生成
+
+### Phase 3: 行程编辑交互 (2026-06-05)
+
+- `3980c04` feat: PUT /api/chat/:sid/plan endpoint for plan editing persistence
+- `32002c8` feat: plan card editing mode with drag/drop, notes, and delete
+- 后端：ConversationContext.editedPlanSummary + handleEditPlan() + PUT route
+- 前端：编辑模式下活动可拖拽（跨天）、可删除、可添加备注，保存后持久化到 session
+
 ## 下一步待办
 
-- Phase 3: 行程编辑交互（拖拽、替换、备注）
 - 端到端测试：配置真实 API Key 验证完整流程
 - HotelAgent 无 fallback 后需验证 Booking.com API 可用性
