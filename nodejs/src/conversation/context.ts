@@ -46,7 +46,8 @@ export interface ConversationContext {
   accommodationStyle?: string;
   travelInterests?: string[];
   foodPreferences?: string[];
-  transportPreference?: string;
+  outboundTransportPreference?: string;
+  returnTransportPreference?: string;
   specialRequests?: string;
   mustVisitAttractions?: string[];
 
@@ -75,14 +76,15 @@ export interface ExtractedFields {
   accommodationStyle?: string;
   travelInterests?: string[];
   foodPreferences?: string[];
-  transportPreference?: string;
+  outboundTransportPreference?: string;
+  returnTransportPreference?: string;
   specialRequests?: string;
   mustVisitAttractions?: string[];
 }
 
 export const FIELD_GROUPS = {
   basics: ["destination", "departureCity", "startDate", "endDate", "numTravelers"] as const,
-  preferences: ["budget", "accommodationStyle", "travelInterests", "transportPreference", "mustVisitAttractions"] as const,
+  preferences: ["budget", "accommodationStyle", "travelInterests", "outboundTransportPreference", "returnTransportPreference", "mustVisitAttractions"] as const,
   nice: ["foodPreferences"] as const,
 } as const;
 
@@ -229,8 +231,8 @@ export function toUserPreferences(ctx: ConversationContext): UserPreferences {
     accessibilityNeeds: [],
     notes: ctx.specialRequests ?? "",
     preferredDestination: ctx.destination,
-    outboundTransportPreference: (ctx.transportPreference as UserPreferences["outboundTransportPreference"]) ?? "no_preference",
-    returnTransportPreference: (ctx.transportPreference as UserPreferences["returnTransportPreference"]) ?? "no_preference",
+    outboundTransportPreference: (ctx.outboundTransportPreference as UserPreferences["outboundTransportPreference"]) ?? "no_preference",
+    returnTransportPreference: (ctx.returnTransportPreference as UserPreferences["returnTransportPreference"]) ?? "no_preference",
     mustVisitAttractions: ctx.mustVisitAttractions ?? [],
     departureTime: "flexible",
     budgetStrictness: "flexible",
@@ -238,7 +240,7 @@ export function toUserPreferences(ctx: ConversationContext): UserPreferences {
     accommodationType: "any",
     preferredHotelBrands: [],
     localTransitMode: "mixed",
-    diningPreference: "mixed",
+    diningPreference: "local_specialties",
     selectedOutbound,
     selectedReturn,
     selectedHotel: selectedHotelOpt,

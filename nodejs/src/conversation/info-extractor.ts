@@ -154,7 +154,8 @@ export class InfoExtractor {
         "accommodationStyle",
         "travelInterests",
         "foodPreferences",
-        "transportPreference",
+        "outboundTransportPreference",
+        "returnTransportPreference",
         "specialRequests",
         "mustVisitAttractions",
       ];

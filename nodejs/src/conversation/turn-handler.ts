@@ -219,50 +219,55 @@ export class TurnHandler {
     try {
       const resolver = this.createSourceResolver();
       const prefs = toUserPreferences(ctx);
-      const isTrainPreferred =
+      const isOutboundTrain =
         prefs.outboundTransportPreference === "high_speed_rail" ||
         prefs.outboundTransportPreference === "train";
+      const isReturnTrain =
+        prefs.returnTransportPreference === "high_speed_rail" ||
+        prefs.returnTransportPreference === "train";
 
       const outbound: TransportOption[] = [];
       const returnOpts: TransportOption[] = [];
 
-      if (isTrainPreferred || prefs.outboundTransportPreference === "no_preference") {
-        const [outboundTrains, returnTrains] = await Promise.all([
-          resolver.resolveTrains({
-            from: ctx.departureCity ?? "",
-            to: ctx.destination ?? "",
-            date: ctx.startDate ?? "",
-          }),
-          resolver.resolveTrains({
-            from: ctx.destination ?? "",
-            to: ctx.departureCity ?? "",
-            date: ctx.endDate ?? "",
-          }),
-        ]);
-
-        outbound.push(...outboundTrains.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(trainToOption));
-        returnOpts.push(...returnTrains.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(trainToOption));
+      if (isOutboundTrain || prefs.outboundTransportPreference === "no_preference") {
+        const trains = await resolver.resolveTrains({
+          from: ctx.departureCity ?? "",
+          to: ctx.destination ?? "",
+          date: ctx.startDate ?? "",
+        });
+        outbound.push(...trains.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(trainToOption));
       }
 
-      if (!isTrainPreferred || outbound.length === 0) {
-        const [outboundFlights, returnFlights] = await Promise.all([
-          resolver.resolveFlights({
-            origin: ctx.departureCity ?? "",
-            destination: ctx.destination ?? "",
-            departureDate: ctx.startDate ?? "",
-            adults: ctx.numTravelers ?? 1,
-          }),
-          resolver.resolveFlights({
-            origin: ctx.destination ?? "",
-            destination: ctx.departureCity ?? "",
-            departureDate: ctx.endDate ?? "",
-            adults: ctx.numTravelers ?? 1,
-          }),
-        ]);
+      if (isReturnTrain || prefs.returnTransportPreference === "no_preference") {
+        const trains = await resolver.resolveTrains({
+          from: ctx.destination ?? "",
+          to: ctx.departureCity ?? "",
+          date: ctx.endDate ?? "",
+        });
+        returnOpts.push(...trains.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(trainToOption));
+      }
 
-        if (outbound.length === 0 || !isTrainPreferred) {
-          outbound.push(...outboundFlights.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(flightToOption));
-          returnOpts.push(...returnFlights.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(flightToOption));
+      if (!isOutboundTrain) {
+        const flights = await resolver.resolveFlights({
+          origin: ctx.departureCity ?? "",
+          destination: ctx.destination ?? "",
+          departureDate: ctx.startDate ?? "",
+          adults: ctx.numTravelers ?? 1,
+        });
+        if (outbound.length === 0) {
+          outbound.push(...flights.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(flightToOption));
+        }
+      }
+
+      if (!isReturnTrain) {
+        const flights = await resolver.resolveFlights({
+          origin: ctx.destination ?? "",
+          destination: ctx.departureCity ?? "",
+          departureDate: ctx.endDate ?? "",
+          adults: ctx.numTravelers ?? 1,
+        });
+        if (returnOpts.length === 0) {
+          returnOpts.push(...flights.slice(0, settings.MAX_TRANSPORT_OPTIONS).map(flightToOption));
         }
       }
 

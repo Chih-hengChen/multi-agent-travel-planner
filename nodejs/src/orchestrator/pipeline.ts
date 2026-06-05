@@ -1,6 +1,6 @@
 import pino, { type Logger } from "pino";
 import { TravelStyle, TravelPlanState, PlanningState, type UserPreferences } from "../types/index.js";
-import { PreferenceAgent, DestinationAgent, FlightAgent, HotelAgent, ActivityAgent, BudgetAgent } from "../agents/index.js";
+import { PreferenceAgent, DestinationAgent, FlightAgent, HotelAgent, ActivityAgent, LLMPlanAgent, BudgetAgent } from "../agents/index.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
@@ -56,7 +56,7 @@ export class TravelPlanningPipeline {
 
     const flightAgent = new FlightAgent(logger, dataSource);
     const hotelAgent = new HotelAgent(logger, dataSource);
-    const activityAgent = new ActivityAgent(logger, dataSource);
+    const activityAgent = new LLMPlanAgent(logger, dataSource);
     const budgetAgent = new BudgetAgent(logger, dataSource);
 
     this.prefAgent = new PreferenceAgent(logger);

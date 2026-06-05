@@ -27,7 +27,8 @@ ${params.history}
   "accommodationStyle": "budget|comfort|luxury",
   "travelInterests": ["兴趣1", "兴趣2"],
   "foodPreferences": ["偏好1"],
-  "transportPreference": "flight|high_speed_rail|train|no_preference",
+  "outboundTransportPreference": "flight|high_speed_rail|train|no_preference",
+  "returnTransportPreference": "flight|high_speed_rail|train|no_preference",
   "specialRequests": "特殊需求",
   "mustVisitAttractions": ["景点名1", "景点名2"]
 }
@@ -53,9 +54,14 @@ ${params.history}
 - "美食"/"吃货" -> travelInterests 中加入 "美食"
 - "自然"/"风景" -> travelInterests 中加入 "自然风光"
 - "购物" -> travelInterests 中加入 "购物"
-- "高铁"/"动车"/"火车" -> transportPreference: "high_speed_rail"
-- "飞机"/"航班"/"机票" -> transportPreference: "flight"
-- "随便"/"都行"/"都可以" -> transportPreference: "no_preference"
+- "高铁"/"动车"/"火车" -> outboundTransportPreference: "high_speed_rail"
+- "飞机"/"航班"/"机票" -> outboundTransportPreference: "flight"
+- "随便"/"都行"/"都可以" -> outboundTransportPreference: "no_preference"
+- **去程返程独立偏好**：
+  - "去程高铁，返程飞机" -> outboundTransportPreference: "high_speed_rail", returnTransportPreference: "flight"
+  - "去程飞机，返程高铁" -> outboundTransportPreference: "flight", returnTransportPreference: "high_speed_rail"
+  - "去程XX"只设置 outboundTransportPreference，"返程YY"只设置 returnTransportPreference
+  - 如果只说了"高铁"没区分去返程 -> 两个字段设相同值
 - 用户提到具体景点/地点名称时提取到 mustVisitAttractions 数组
 - "想去故宫、颐和园和国博" -> mustVisitAttractions: ["故宫", "颐和园", "国博"]
 - "还想去雍和宫拜一拜" -> 追加到 mustVisitAttractions

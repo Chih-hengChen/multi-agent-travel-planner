@@ -48,40 +48,68 @@ interface ApiHotel {
 
 async function enrichChineseNames(hotels: Hotel[], city: string): Promise<void> {
   if (!settings.AMAP_API_KEY || hotels.length === 0) return;
-  try {
-    const names = hotels.map((h) => h.name).join("|");
-    const qs = new URLSearchParams({
-      key: settings.AMAP_API_KEY,
-      keywords: names,
-      city,
-      citylimit: "true",
-      offset: "25",
-      page: "1",
-      extensions: "base",
-    });
-    const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!resp.ok) return;
-    const data = await resp.json() as { status: string; pois?: { name: string }[] };
-    if (data.status !== "1" || !data.pois?.length) return;
+  const BRAND_MAP: Record<string, string> = {
+    "howard johnson": "豪生",
+    "holiday inn": "假日",
+    "crowne plaza": "皇冠假日",
+    "holiday inn express": "智选假日",
+    "courtyard": "万怡",
+    "marriott": "万豪",
+    "sheraton": "喜来登",
+    "westin": "威斯汀",
+    "hilton": "希尔顿",
+    "hyatt": "凯悦",
+    "grand hyatt": "君悦",
+    "park hyatt": "柏悦",
+    "shangri": "香格里拉",
+    "kempinski": "凯宾斯基",
+    "intercontinental": "洲际",
+    "novotel": "诺富特",
+    "ibis": "宜必思",
+    "ramada": "华美达",
+    "days inn": "戴斯",
+    "super 8": "速8",
+    "jinjiang": "锦江",
+    "home inn": "如家",
+    "hanting": "汉庭",
+    "all seasons": "全季",
+  };
 
-    const poiMap = new Map<string, string>();
-    for (const poi of data.pois) {
-      if (poi.name) poiMap.set(poi.name.toLowerCase(), poi.name);
-    }
-
-    for (const hotel of hotels) {
-      const en = hotel.name.toLowerCase();
-      for (const [cnLower, cnName] of poiMap) {
-        if (en.includes(cnLower) || cnLower.includes(en.replace(/\s+/g, ""))) {
-          hotel.name = cnName;
+  for (const hotel of hotels) {
+    try {
+      const enLower = hotel.name.toLowerCase();
+      let keyword = "";
+      for (const [brand, cn] of Object.entries(BRAND_MAP)) {
+        if (enLower.includes(brand)) {
+          keyword = cn;
           break;
         }
       }
+      if (!keyword) {
+        const firstTwo = hotel.name.split(" ").slice(0, 2).join(" ");
+        keyword = firstTwo;
+      }
+
+      const qs = new URLSearchParams({
+        key: settings.AMAP_API_KEY,
+        keywords: keyword + "酒店",
+        types: "100000",
+        city,
+        citylimit: "true",
+        offset: "5",
+        page: "1",
+        extensions: "base",
+      });
+      const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json() as { status: string; pois?: { name: string; location?: string }[] };
+      if (data.status !== "1" || !data.pois?.length) continue;
+      hotel.name = data.pois[0].name;
+    } catch {
+      // keep original name
     }
-  } catch {
-    // Amap lookup failed, keep English names
   }
 }
 
