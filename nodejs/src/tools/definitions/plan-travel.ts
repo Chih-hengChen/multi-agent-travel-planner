@@ -29,10 +29,20 @@ export function createPlanTravelTool(log?: Logger): RegisteredTool {
           items: { type: "string" },
           description: "兴趣标签，如：美食、博物馆、购物、自然风光",
         },
-        transport_preference: {
+        outbound_transport_preference: {
           type: "string",
           enum: ["flight", "high_speed_rail", "train", "no_preference"],
-          description: "交通偏好，默认 no_preference",
+          description: "去程交通偏好，默认 no_preference",
+        },
+        return_transport_preference: {
+          type: "string",
+          enum: ["flight", "high_speed_rail", "train", "no_preference"],
+          description: "返程交通偏好，默认 no_preference",
+        },
+        must_visit_attractions: {
+          type: "array",
+          items: { type: "string" },
+          description: "必须游览的景点列表",
         },
         departure_time: {
           type: "string",
@@ -84,7 +94,9 @@ export function createPlanTravelTool(log?: Logger): RegisteredTool {
           accessibilityNeeds: [],
           notes: String(input.special_requests ?? ""),
           preferredDestination: String(input.destination),
-          transportPreference: (input.transport_preference as UserPreferences["transportPreference"]) ?? "no_preference",
+          outboundTransportPreference: (input.outbound_transport_preference as UserPreferences["outboundTransportPreference"]) ?? "no_preference",
+          returnTransportPreference: (input.return_transport_preference as UserPreferences["returnTransportPreference"]) ?? "no_preference",
+          mustVisitAttractions: Array.isArray(input.must_visit_attractions) ? input.must_visit_attractions.map(String) : [],
           departureTime: (input.departure_time as UserPreferences["departureTime"]) ?? "flexible",
           budgetStrictness: (input.budget_strictness as UserPreferences["budgetStrictness"]) ?? "strict",
           specialRequests: input.special_requests ? String(input.special_requests) : undefined,

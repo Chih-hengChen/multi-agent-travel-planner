@@ -22,7 +22,7 @@ export class FlightAgent extends BaseAgent {
       return state;
     }
 
-    const tp = pref.transportPreference;
+    const tp = pref.outboundTransportPreference;
     const wantTrain = tp === "high_speed_rail" || tp === "train";
 
     if (wantTrain) {

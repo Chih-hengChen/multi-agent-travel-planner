@@ -34,6 +34,45 @@ export enum PlanningState {
   FAILED = "failed",
 }
 
+export const FlightSchema = z.object({
+  airline: z.string(),
+  flightNo: z.string(),
+  departureCity: z.string(),
+  arrivalCity: z.string(),
+  departureTime: z.string(),
+  arrivalTime: z.string(),
+  price: z.number().nonnegative(),
+  durationHours: z.number().nonnegative(),
+  stops: z.number().int().nonnegative().default(0),
+  cabinClass: z.string().default("economy"),
+});
+export type Flight = z.infer<typeof FlightSchema>;
+
+export const HotelSchema = z.object({
+  name: z.string(),
+  city: z.string(),
+  address: z.string().default(""),
+  starRating: z.number().min(1).max(5).default(3.0),
+  userRating: z.number().min(0).max(10).default(8.0),
+  pricePerNight: z.number().nonnegative(),
+  amenities: z.array(z.string()).default([]),
+  distanceToCenterKm: z.number().nonnegative().default(0),
+});
+export type Hotel = z.infer<typeof HotelSchema>;
+
+export const TrainSchema = z.object({
+  trainNo: z.string(),
+  trainType: z.string().default("高铁"),
+  departureCity: z.string(),
+  arrivalCity: z.string(),
+  departureTime: z.string(),
+  arrivalTime: z.string(),
+  price: z.number().nonnegative(),
+  durationHours: z.number().nonnegative(),
+  seatType: z.string().default("二等座"),
+});
+export type Train = z.infer<typeof TrainSchema>;
+
 export const UserPreferencesSchema = z.object({
   budget: z.number().positive(),
   travelStyle: z.nativeEnum(TravelStyle).default(TravelStyle.COMFORT),
@@ -46,7 +85,9 @@ export const UserPreferencesSchema = z.object({
   accessibilityNeeds: z.array(z.string()).default([]),
   notes: z.string().default(""),
   preferredDestination: z.string().optional(),
-  transportPreference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  outboundTransportPreference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  returnTransportPreference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  mustVisitAttractions: z.array(z.string()).default([]),
   departureTime: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
   budgetStrictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
   specialRequests: z.string().optional(),
@@ -54,7 +95,10 @@ export const UserPreferencesSchema = z.object({
   preferredStarRating: z.number().min(1).max(5).optional(),
   preferredHotelBrands: z.array(z.string()).default([]),
   localTransitMode: z.enum(["public_transit", "taxi", "rental_car", "mixed"]).default("mixed"),
-  diningPreference: z.enum(["trending", "local_specialties", "mixed"]).default("mixed"),
+  diningPreference: z.enum(["trending", "local_specialties", "mixed"]).default("local_specialties"),
+  selectedOutbound: z.union([TrainSchema, FlightSchema]).optional(),
+  selectedReturn: z.union([TrainSchema, FlightSchema]).optional(),
+  selectedHotel: HotelSchema.optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
@@ -77,20 +121,6 @@ export const DestinationRecommendationSchema = z.object({
 });
 export type DestinationRecommendation = z.infer<typeof DestinationRecommendationSchema>;
 
-export const FlightSchema = z.object({
-  airline: z.string(),
-  flightNo: z.string(),
-  departureCity: z.string(),
-  arrivalCity: z.string(),
-  departureTime: z.string(),
-  arrivalTime: z.string(),
-  price: z.number().nonnegative(),
-  durationHours: z.number().nonnegative(),
-  stops: z.number().int().nonnegative().default(0),
-  cabinClass: z.string().default("economy"),
-});
-export type Flight = z.infer<typeof FlightSchema>;
-
 export const FlightSearchResultSchema = z.object({
   outboundFlights: z.array(FlightSchema).default([]),
   returnFlights: z.array(FlightSchema).default([]),
@@ -99,18 +129,6 @@ export const FlightSearchResultSchema = z.object({
   totalFlightCost: z.number().default(0),
 });
 export type FlightSearchResult = z.infer<typeof FlightSearchResultSchema>;
-
-export const HotelSchema = z.object({
-  name: z.string(),
-  city: z.string(),
-  address: z.string().default(""),
-  starRating: z.number().min(1).max(5).default(3.0),
-  userRating: z.number().min(0).max(10).default(8.0),
-  pricePerNight: z.number().nonnegative(),
-  amenities: z.array(z.string()).default([]),
-  distanceToCenterKm: z.number().nonnegative().default(0),
-});
-export type Hotel = z.infer<typeof HotelSchema>;
 
 export const HotelSearchResultSchema = z.object({
   hotels: z.array(HotelSchema).default([]),
@@ -134,19 +152,6 @@ export const ActivitySchema = z.object({
   geoLocation: z.object({ lon: z.number(), lat: z.number() }).optional(),
 });
 export type Activity = z.infer<typeof ActivitySchema>;
-
-export const TrainSchema = z.object({
-  trainNo: z.string(),
-  trainType: z.string().default("高铁"),
-  departureCity: z.string(),
-  arrivalCity: z.string(),
-  departureTime: z.string(),
-  arrivalTime: z.string(),
-  price: z.number().nonnegative(),
-  durationHours: z.number().nonnegative(),
-  seatType: z.string().default("二等座"),
-});
-export type Train = z.infer<typeof TrainSchema>;
 
 export const DayPlanSchema = z.object({
   date: z.string(),
@@ -205,7 +210,9 @@ export const PlanRequestSchema = z.object({
   num_travelers: z.number().int().min(1).default(1),
   interests: z.array(z.string()).default([]),
   notes: z.string().default(""),
-  transport_preference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  outbound_transport_preference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  return_transport_preference: z.enum(["flight", "high_speed_rail", "train", "no_preference"]).default("no_preference"),
+  must_visit_attractions: z.array(z.string()).default([]),
   departure_time: z.enum(["morning", "afternoon", "evening", "flexible"]).default("flexible"),
   budget_strictness: z.enum(["strict", "flexible", "luxury"]).default("strict"),
   special_requests: z.string().optional(),

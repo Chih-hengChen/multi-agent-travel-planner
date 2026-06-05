@@ -221,13 +221,13 @@ export class TurnHandler {
       const resolver = this.createSourceResolver();
       const prefs = toUserPreferences(ctx);
       const isTrainPreferred =
-        prefs.transportPreference === "high_speed_rail" ||
-        prefs.transportPreference === "train";
+        prefs.outboundTransportPreference === "high_speed_rail" ||
+        prefs.outboundTransportPreference === "train";
 
       const outbound: TransportOption[] = [];
       const returnOpts: TransportOption[] = [];
 
-      if (isTrainPreferred || prefs.transportPreference === "no_preference") {
+      if (isTrainPreferred || prefs.outboundTransportPreference === "no_preference") {
         const [outboundTrains, returnTrains] = await Promise.all([
           resolver.resolveTrains({
             from: ctx.departureCity ?? "",
