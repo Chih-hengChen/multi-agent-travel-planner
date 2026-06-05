@@ -6,6 +6,7 @@ import {
   createDefaultContext,
 } from "../conversation/context.js";
 import { ConversationState } from "../conversation/state-machine.js";
+import { sessionLogger } from "../logging/session-logger.js";
 
 export class ConversationOrchestrator {
   private readonly sessionStore: SessionStore;
@@ -20,6 +21,7 @@ export class ConversationOrchestrator {
     const sessionId = crypto.randomUUID();
     const ctx = createDefaultContext(sessionId);
     await this.sessionStore.set(sessionId, ctx);
+    sessionLogger.append(sessionId, "session_created", { state: ctx.state });
     return sessionId;
   }
 
@@ -34,14 +36,25 @@ export class ConversationOrchestrator {
       return;
     }
 
+    sessionLogger.append(sessionId, "user_message", {
+      text: userMessage,
+      state: ctx.state,
+      turnCount: ctx.turnCount + 1,
+    });
+
     const result: TurnResult = await this.turnHandler.handleTurn(ctx, userMessage);
 
     if (result.newState !== ctx.state) {
       emit("state_change", { state: result.newState });
+      sessionLogger.append(sessionId, "state_change", {
+        from: ctx.state,
+        to: result.newState,
+      });
     }
 
     if (result.replyText) {
       emit("text_delta", { text: result.replyText });
+      sessionLogger.append(sessionId, "assistant_reply", { text: result.replyText });
     }
 
     if (result.questionFields?.length) {
@@ -53,18 +66,22 @@ export class ConversationOrchestrator {
 
     if (result.transportOptions) {
       emit("transport_options", result.transportOptions);
+      sessionLogger.append(sessionId, "transport_options", result.transportOptions);
     }
 
     if (result.hotelOptions) {
       emit("hotel_options", result.hotelOptions);
+      sessionLogger.append(sessionId, "hotel_options", result.hotelOptions);
     }
 
     if (result.planResult) {
       emit("tool_result", { tool: "plan_travel", result: result.planResult });
+      sessionLogger.append(sessionId, "plan_result", result.planResult);
     }
 
     if (result.error) {
       emit("error", { error: result.error, recoverable: true });
+      sessionLogger.append(sessionId, "error", { error: result.error });
     }
 
     ctx.state = result.newState;
@@ -85,30 +102,48 @@ export class ConversationOrchestrator {
       return;
     }
 
+    sessionLogger.append(sessionId, "select", {
+      type: request.type,
+      action: request.action,
+      outboundId: request.outboundId,
+      returnId: request.returnId,
+      hotelId: request.hotelId,
+      state: ctx.state,
+    });
+
     const result: TurnResult = await this.turnHandler.handleSelect(ctx, request);
 
     if (result.newState !== ctx.state) {
       emit("state_change", { state: result.newState });
+      sessionLogger.append(sessionId, "state_change", {
+        from: ctx.state,
+        to: result.newState,
+      });
     }
 
     if (result.replyText) {
       emit("text_delta", { text: result.replyText });
+      sessionLogger.append(sessionId, "assistant_reply", { text: result.replyText });
     }
 
     if (result.transportOptions) {
       emit("transport_options", result.transportOptions);
+      sessionLogger.append(sessionId, "transport_options", result.transportOptions);
     }
 
     if (result.hotelOptions) {
       emit("hotel_options", result.hotelOptions);
+      sessionLogger.append(sessionId, "hotel_options", result.hotelOptions);
     }
 
     if (result.planResult) {
       emit("tool_result", { tool: "plan_travel", result: result.planResult });
+      sessionLogger.append(sessionId, "plan_result", result.planResult);
     }
 
     if (result.error) {
       emit("error", { error: result.error, recoverable: true });
+      sessionLogger.append(sessionId, "error", { error: result.error });
     }
 
     ctx.state = result.newState;
@@ -139,6 +174,8 @@ export class ConversationOrchestrator {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
+    sessionLogger.append(sessionId, "session_deleted", {});
+    sessionLogger.close(sessionId);
     await this.sessionStore.delete(sessionId);
   }
 
@@ -148,6 +185,7 @@ export class ConversationOrchestrator {
     ctx.editedPlanSummary = plan;
     ctx.version++;
     ctx.updatedAt = Date.now();
+    sessionLogger.append(sessionId, "plan_edited", plan);
     await this.sessionStore.set(sessionId, ctx);
   }
 }
