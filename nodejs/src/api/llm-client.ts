@@ -1,4 +1,5 @@
 import { settings } from "../config/settings.js";
+import { sessionLogger } from "../logging/session-logger.js";
 
 export interface Message {
   role: "user" | "assistant";
@@ -31,6 +32,7 @@ export async function streamChat(
   tools?: ToolDef[],
   system?: string,
   onDelta?: (text: string) => void,
+  sessionId?: string,
 ): Promise<ChatResult> {
   const body: Record<string, unknown> = {
     model: settings.LLM_MODEL,
@@ -41,6 +43,18 @@ export async function streamChat(
   };
   if (system) body.system = system;
   if (tools?.length) body.tools = tools;
+
+  if (sessionId) {
+    sessionLogger.append(sessionId, "llm_request", {
+      model: settings.LLM_MODEL,
+      caller: "stream_chat",
+      system,
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : (m.content as ContentBlock[]).map((b) => b.type === "text" ? b.text : `[${b.type}]`),
+      })),
+    });
+  }
 
   const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
     method: "POST",
@@ -58,7 +72,21 @@ export async function streamChat(
     throw new Error(`LLM API ${resp.status}: ${err}`);
   }
 
-  return parseStream(resp, onDelta);
+  const result = await parseStream(resp, onDelta);
+
+  if (sessionId) {
+    sessionLogger.append(sessionId, "llm_response", {
+      model: settings.LLM_MODEL,
+      caller: "stream_chat",
+      contentBlocks: result.assistantContent.map((b) =>
+        b.type === "text" ? { type: "text", text: b.text }
+          : b.type === "tool_use" ? { type: "tool_use", name: b.name, input: b.input }
+            : { type: "tool_result", tool_use_id: (b as { tool_use_id: string }).tool_use_id },
+      ),
+    });
+  }
+
+  return result;
 }
 
 async function parseStream(
