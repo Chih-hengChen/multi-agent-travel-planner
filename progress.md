@@ -56,15 +56,15 @@
 - stream-handler.ts 重构为 registry 驱动，通用化 requiresUserInput 处理
 - SourceResolver 新增 resolveAttractions() 公开方法
 
-### XHS 服务修复 (2026-06-05)
+### XHS 服务修复 + 端到端验证 (2026-06-05)
 
-- `2d8977c` fix: add missing loguru dependency for XHS service
-- Spider_XHS 依赖 loguru 但未声明在 requirements.txt，导致 ImportError 被误报为 "Spider_XHS not found"
-- 改进 _get_api() 错误信息，暴露真实 import 失败原因
+- `2d8977c` fix: add missing loguru dependency — ImportError 被误报为 "Spider_XHS not found"
+- `b88fc94` fix: 补全 4 个缺失 JS 文件 + npm 依赖 + os.chdir 修复 require 路径
+- `d1a6c0b` fix: curl_cffi TLS 指纹伪装绕过 XHS 反爬，搜索功能端到端验证通过
 
 ## 下一步待办
 
-- XHS 服务端到端测试：设置 XHS_COOKIE 后验证搜索返回笔记数据
-- 端到端测试：启动服务验证 12306 高铁查询实际返回车次数据
+- 端到端测试：启动 Node.js 服务验证 LLM 自主调用 XHS 搜索工具
+- 端到端测试：验证 12306 高铁查询实际返回车次数据
 - HotelAgent 无 fallback 后需验证 Booking.com API 可用性
 - 12306 可能存在反爬限制，生产环境需观察稳定性
