@@ -419,7 +419,7 @@ export class WebSearchSource implements TravelDataSource {
       : data.choices?.[0]?.message?.content ?? "";
   }
 
-  private async getCityKnowledge(city: string): Promise<string> {
+  async getCityKnowledge(city: string): Promise<string> {
     const cached = cityKnowledgeCache.get(city);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
       this.logger.info({ city, source: "cached" }, "city-knowledge: hit");

@@ -6,6 +6,7 @@ import { BaseAgent } from "./base-agent.js";
 import { sessionLogger } from "../logging/session-logger.js";
 import { getSessionId } from "../logging/session-context.js";
 import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
+import { WebSearchSource } from "../data-sources/web-search-source.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
@@ -16,7 +17,18 @@ export class LLMPlanAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const days = this.getTravelDays(pref.startDate, pref.endDate);
 
-    // Pre-fetch weather for planning
+    // Pre-fetch Baike city knowledge and weather for planning
+    let cityKnowledge = "";
+    try {
+      const webSearch = new WebSearchSource(this.log);
+      cityKnowledge = await webSearch.getCityKnowledge(dest.city);
+      if (cityKnowledge) {
+        this.log.info({ city: dest.city, len: cityKnowledge.length }, "city-knowledge: fetched for LLM plan");
+      }
+    } catch {
+      // City knowledge unavailable, continue without it
+    }
+
     let weatherSummary = "";
     try {
       const weatherSource = new AmapWeatherSource();
@@ -40,7 +52,7 @@ export class LLMPlanAgent extends BaseAgent {
     }
 
     const tools = this.buildToolDefs();
-    const systemPrompt = this.buildSystemPrompt(pref, dest.city, days, weatherSummary);
+    const systemPrompt = this.buildSystemPrompt(pref, dest.city, days, weatherSummary, cityKnowledge);
     const messages: Array<{ role: "user" | "assistant"; content: string | unknown[] }> = [
       { role: "user", content: systemPrompt },
     ];
@@ -143,7 +155,7 @@ export class LLMPlanAgent extends BaseAgent {
     ];
   }
 
-  private buildSystemPrompt(pref: UserPreferences, city: string, days: string[], weatherSummary?: string): string {
+  private buildSystemPrompt(pref: UserPreferences, city: string, days: string[], weatherSummary?: string, cityKnowledge?: string): string {
     const transportLines = this.formatTransport(pref);
     const hotelLine = this.formatHotel(pref);
     const mustVisit = pref.mustVisitAttractions?.length
@@ -178,6 +190,7 @@ export class LLMPlanAgent extends BaseAgent {
       transportLines,
       hotelLine,
       weatherSummary ? "\n## 天气预报\n" + weatherSummary : "",
+      cityKnowledge ? "\n## 目的地百科知识（来自百度百科）\n" + cityKnowledge.slice(0, 3000) : "",
       "## 核心规则（严格遵守）",
       "",
       "### 1. 必去景点完整覆盖",
