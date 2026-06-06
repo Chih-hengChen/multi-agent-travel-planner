@@ -53,13 +53,38 @@ export class LLMPlanAgent extends BaseAgent {
 
     const tools = this.buildToolDefs();
     const systemPrompt = this.buildSystemPrompt(pref, dest.city, days, weatherSummary, cityKnowledge);
-    const messages: Array<{ role: "user" | "assistant"; content: string | unknown[] }> = [
+    let messages: Array<{ role: "user" | "assistant"; content: string | unknown[] }> = [
       { role: "user", content: systemPrompt },
     ];
 
+    // Track which state we're in for the state machine
+    let hasSearchedWeather = false;
+    let hasSearchedAttractions = false;
+    let hasSearchedDining = false;
+    const toolCallHistory: string[] = [];
+    const MAX_CONTEXT_CHARS = 10_000;
+
     const maxRounds = 10;
     for (let round = 0; round < maxRounds; round++) {
-      this.log.info({ agent: this.name, round }, "LLM plan round");
+      // --- State machine: inject current state into context ---
+      let currentState = "COMPILE";
+      if (!hasSearchedWeather) currentState = "FETCH_WEATHER";
+      else if (!hasSearchedAttractions) currentState = "SEARCH_ATTRACTIONS";
+      else if (!hasSearchedDining) currentState = "SEARCH_DINING";
+
+      // Keep the last systemPrompt state hint lightweight — append to latest user message
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === "user" && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
+        const stateHint = "\n[state: " + currentState + "] [round: " + (round + 1) + "/" + maxRounds + "]";
+        if (typeof lastMsg.content[lastMsg.content.length - 1] === "string") {
+          (lastMsg.content[lastMsg.content.length - 1] as string) += stateHint;
+        } else {
+          // Append as text block
+          (lastMsg.content as unknown[]).push({ type: "text", text: stateHint });
+        }
+      }
+
+      this.log.info({ agent: this.name, round, state: currentState }, "LLM plan round");
       const response = await this.callLlmWithTools(messages, tools);
 
       const textBlocks: string[] = [];
@@ -73,6 +98,14 @@ export class LLMPlanAgent extends BaseAgent {
         }
       }
 
+      // Update state machine
+      for (const tc of toolCalls) {
+        toolCallHistory.push(tc.name);
+        if (tc.name === "search_weather") hasSearchedWeather = true;
+        if (tc.name === "search_attractions") hasSearchedAttractions = true;
+        if (tc.name === "search_restaurants") hasSearchedDining = true;
+      }
+
       messages.push({ role: "assistant", content: response.content as unknown[] });
 
       if (toolCalls.length === 0) {
@@ -84,20 +117,91 @@ export class LLMPlanAgent extends BaseAgent {
         return state;
       }
 
+      // Execute tools and collect results
       const toolResults: unknown[] = [];
       for (const tc of toolCalls) {
         const result = await this.executeTool(tc.name, tc.input, dest.city, pref);
+
+        // Truncate verbose tool results before storing
+        let contentStr = JSON.stringify(result);
+        if (contentStr.length > 2000) {
+          contentStr = JSON.stringify(this.truncateToolResult(tc.name, result));
+        }
+
         toolResults.push({
           type: "tool_result",
           tool_use_id: tc.id,
-          content: JSON.stringify(result),
+          content: contentStr,
         });
       }
       messages.push({ role: "user", content: toolResults });
+
+      // --- Context window management ---
+      messages = this.compressContext(messages, MAX_CONTEXT_CHARS, round);
     }
 
     this.log.warn({ agent: this.name }, "LLM plan agent exceeded max rounds, using fallback");
     return this.fallbackPlan(state, days, dest.city, pref);
+  }
+
+  /**
+   * Truncate verbose tool results: keep only essential fields.
+   */
+  private truncateToolResult(toolName: string, result: Record<string, unknown>): Record<string, unknown> {
+    if (toolName === "search_attractions" && result.attractions) {
+      const list = result.attractions as string;
+      const lines = list.split("\n").slice(0, 5);
+      return { ...result, attractions: lines.join("\n") + (lines.length < list.split("\n").length ? "\n...(已截断)" : "") };
+    }
+    if (toolName === "search_restaurants" && result.restaurants) {
+      const list = result.restaurants as string;
+      const lines = list.split("\n").slice(0, 4);
+      return { ...result, restaurants: lines.join("\n") + (lines.length < list.split("\n").length ? "\n...(已截断)" : "") };
+    }
+    return result;
+  }
+
+  /**
+   * Compress context if total message content exceeds threshold.
+   * Keeps: system prompt, last 2 assistant messages + their tool results.
+   * Summarizes: everything older gets replaced with a condensed note.
+   */
+  private compressContext(
+    msgs: Array<{ role: "user" | "assistant"; content: string | unknown[] }>,
+    maxChars: number,
+    _round: number,
+  ): Array<{ role: "user" | "assistant"; content: string | unknown[] }> {
+    const totalLen = JSON.stringify(msgs).length;
+    if (totalLen <= maxChars || msgs.length <= 3) return msgs;
+
+    // Keep first (system), last 4 messages (2 rounds of assistant+user)
+    const keepHead = 1; // system
+    const keepTail = 4; // last 2 rounds
+
+    const head = msgs.slice(0, keepHead);
+    const tail = msgs.slice(-keepTail);
+    const middle = msgs.slice(keepHead, -keepTail);
+
+    if (middle.length === 0) return msgs;
+
+    // Count tools called in middle
+    const toolCounts: Record<string, number> = {};
+    for (const m of middle) {
+      if (m.role === "assistant" && Array.isArray(m.content)) {
+        for (const block of m.content as Array<Record<string, unknown>>) {
+          if (block.type === "tool_use" && block.name) {
+            toolCounts[block.name as string] = (toolCounts[block.name as string] || 0) + 1;
+          }
+        }
+      }
+    }
+    const summaryParts = Object.entries(toolCounts).map(([name, count]) => name + " x" + count);
+    const summaryMsg = {
+      role: "user" as const,
+      content: "[上下文压缩] 已完成中间步骤：" + summaryParts.join(", ") + "。请基于已有信息继续规划。",
+    };
+
+    return [...head, summaryMsg, ...tail];
   }
 
   private buildToolDefs() {
