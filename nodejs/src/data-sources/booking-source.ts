@@ -172,6 +172,17 @@ export class BookingSource implements TravelDataSource {
       const hotels: Hotel[] = rawHotels.map((h) => {
         const perNight = h.composite_price_breakdown?.gross_amount_per_night?.value
           ?? (h.min_total_price ? h.min_total_price / nights : 0);
+
+        let distanceKm = 0;
+        if (h.latitude != null && h.longitude != null && coords) {
+          const R = 6371;
+          const dLat = (h.latitude - coords.lat) * Math.PI / 180;
+          const dLon = (h.longitude - coords.lon) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2
+            + Math.cos(coords.lat * Math.PI / 180) * Math.cos(h.latitude * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+          distanceKm = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+        }
+
         return {
           name: h.hotel_name ?? "",
           city: params.city,
@@ -180,11 +191,17 @@ export class BookingSource implements TravelDataSource {
           userRating: (h.review_score ?? 0) / 2,
           pricePerNight: Math.round(perNight),
           amenities: [],
-          distanceToCenterKm: 0,
+          distanceToCenterKm: distanceKm,
         } as Hotel;
       });
 
       await enrichChineseNames(hotels, params.city);
+
+      hotels.sort((a, b) => {
+        const distDiff = a.distanceToCenterKm - b.distanceToCenterKm;
+        if (distDiff !== 0) return distDiff;
+        return a.pricePerNight - b.pricePerNight;
+      });
 
       return hotels;
     } catch (err) {

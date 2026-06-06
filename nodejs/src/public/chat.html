@@ -573,7 +573,7 @@ function renderHotelCard(hotels) {
       <div class="flex justify-between items-start">
         <div>
           <div class="font-semibold text-sm">${esc(h.name)} ${isFirst ? '<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">推荐</span>' : ''}</div>
-          <div class="text-xs text-gray-400 mt-0.5">${stars} ${h.userRating?.toFixed(1) || ''} · ${h.distanceToCenterKm ? h.distanceToCenterKm + 'km to center' : ''}</div>
+          <div class="text-xs text-gray-400 mt-0.5">${stars} ${h.userRating?.toFixed(1) || ''}${h.distanceToCenterKm ? ' · 距市中心' + h.distanceToCenterKm + 'km' : ''}</div>
           ${h.address ? `<div class="text-xs text-gray-400">${esc(h.address)}</div>` : ''}
         </div>
         <div class="text-right">
