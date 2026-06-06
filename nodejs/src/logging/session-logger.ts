@@ -22,7 +22,10 @@ export type LogEventType =
   | "tool_result"
   | "source_call"
   | "source_result"
-  | "error";
+  | "error"
+  | "route_decision"
+  | "step_status"
+  | "trace_event";
 
 interface LogEntry {
   ts: string;

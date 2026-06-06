@@ -13,11 +13,19 @@ export interface ToolResult {
   error?: string;
 }
 
+export type RiskLevel = "safe_auto" | "confirm_required" | "sensitive" | "disabled";
+export type CostLevel = "free" | "paid" | "unknown";
+
 export interface ToolMetadata {
   requiresUserInput?: boolean;
   sseHint?: string;
   timeout?: number;
   category?: "search" | "planning" | "preference";
+  riskLevel?: RiskLevel;
+  costLevel?: CostLevel;
+  maxRetries?: number;
+  requiresNetwork?: boolean;
+  outputValidator?: string;
 }
 
 export interface RegisteredTool extends ToolDef {

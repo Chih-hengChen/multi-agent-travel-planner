@@ -11,6 +11,9 @@ import {
 } from "./context.js";
 import { InfoExtractor } from "./info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
+import { IntentRouter } from "../intent-router/index.js";
+import type { RouteDecision } from "../intent-router/types.js";
+import { sessionLogger } from "../logging/session-logger.js";
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
 import { SourceResolver } from "../data-sources/source-resolver.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
@@ -44,17 +47,20 @@ export class TurnHandler {
   private readonly infoExtractor: InfoExtractor;
   private readonly gatheringAgent: GatheringAgent;
   private readonly pipeline: TravelPlanningPipeline;
+  private readonly intentRouter: IntentRouter;
   private readonly log: Logger;
 
   constructor(
     infoExtractor: InfoExtractor,
     gatheringAgent: GatheringAgent,
     pipeline: TravelPlanningPipeline,
+    intentRouter?: IntentRouter,
     log?: Logger,
   ) {
     this.infoExtractor = infoExtractor;
     this.gatheringAgent = gatheringAgent;
     this.pipeline = pipeline;
+    this.intentRouter = intentRouter ?? new IntentRouter();
     this.log = log ?? pino({ level: settings.LOG_LEVEL });
   }
 
@@ -65,13 +71,33 @@ export class TurnHandler {
     ctx.messageHistory.push({ role: "user", content: userMessage });
     ctx.turnCount++;
 
-    if (ctx.state === ConversationState.ERROR && ctx.lastError) {
+    const routeDecision = this.intentRouter.route(userMessage, {
+      state: ctx.state,
+      destination: ctx.destination,
+      departureCity: ctx.departureCity,
+      startDate: ctx.startDate,
+      endDate: ctx.endDate,
+      numTravelers: ctx.numTravelers,
+      budget: ctx.budget,
+    });
+    sessionLogger.append(ctx.sessionId, "route_decision", routeDecision);
+
+    if (routeDecision.intent === "simple_answer" && ctx.state === ConversationState.INIT && !ctx.destination) {
+      ctx.state = ConversationState.INIT;
+      ctx.updatedAt = Date.now();
+      return {
+        newState: ConversationState.INIT,
+        replyText: "您好！我是旅行规划助手，可以帮您规划旅行行程。请告诉我您想去哪里？",
+      };
+    }
+
+    if (ctx.state === ConversationState.ERROR_RECOVERABLE && ctx.lastError) {
       if (ctx.lastError.retryCount < 2) {
         this.log.info({ sessionId: ctx.sessionId }, "Retrying from ERROR state");
         ctx.lastError.retryCount++;
       } else {
         return {
-          newState: ConversationState.ERROR,
+          newState: ConversationState.ERROR_RECOVERABLE,
           replyText: "抱歉，系统暂时无法处理您的请求，请稍后再试。",
           error: "Max retries exceeded",
         };
@@ -292,7 +318,7 @@ export class TurnHandler {
       const msg = err instanceof Error ? err.message : String(err);
       this.log.error({ err: msg, sessionId: ctx.sessionId }, "Transport search failed");
 
-      ctx.state = ConversationState.ERROR;
+      ctx.state = ConversationState.ERROR_RECOVERABLE;
       ctx.lastError = {
         state: ConversationState.SEARCHING_TRANSPORT,
         message: msg,
@@ -302,7 +328,7 @@ export class TurnHandler {
       ctx.updatedAt = Date.now();
 
       return {
-        newState: ConversationState.ERROR,
+        newState: ConversationState.ERROR_RECOVERABLE,
         replyText: `交通搜索失败：${msg}`,
         error: msg,
       };
@@ -350,7 +376,7 @@ export class TurnHandler {
       const msg = err instanceof Error ? err.message : String(err);
       this.log.error({ err: msg, sessionId: ctx.sessionId }, "Hotel search failed");
 
-      ctx.state = ConversationState.ERROR;
+      ctx.state = ConversationState.ERROR_RECOVERABLE;
       ctx.lastError = {
         state: ConversationState.SEARCHING_HOTELS,
         message: msg,
@@ -360,7 +386,7 @@ export class TurnHandler {
       ctx.updatedAt = Date.now();
 
       return {
-        newState: ConversationState.ERROR,
+        newState: ConversationState.ERROR_RECOVERABLE,
         replyText: `酒店搜索失败：${msg}`,
         error: msg,
       };
@@ -393,7 +419,7 @@ export class TurnHandler {
       const msg = err instanceof Error ? err.message : String(err);
       this.log.error({ err: msg, sessionId: ctx.sessionId }, "Pipeline failed");
 
-      ctx.state = ConversationState.ERROR;
+      ctx.state = ConversationState.ERROR_RECOVERABLE;
       ctx.lastError = {
         state: ConversationState.SEARCHING,
         message: msg,
@@ -403,7 +429,7 @@ export class TurnHandler {
       ctx.updatedAt = Date.now();
 
       return {
-        newState: ConversationState.ERROR,
+        newState: ConversationState.ERROR_RECOVERABLE,
         replyText: `行程规划失败：${msg}`,
         error: msg,
       };

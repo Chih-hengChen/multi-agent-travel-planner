@@ -12,7 +12,18 @@ src/
 │   ├── hotel-agent.ts         # 酒店搜索与评分
 │   ├── activity-agent.ts      # 每日活动规划
 │   ├── budget-agent.ts        # 预算检查 + 自动调整
+│   ├── llm-plan-agent.ts      # LLM 驱动行程生成
+│   ├── gathering-agent.ts     # 信息收集提问生成
 │   └── index.ts               # 统一导出
+├── intent-router/             # [新] 意图路由层
+│   ├── types.ts               # RouteDecision + ExecutionMode
+│   └── index.ts               # IntentRouter 分类器
+├── step-executor/             # [新] 统一 Step Runtime
+│   ├── types.ts               # AgentStep + StepRecord
+│   ├── index.ts               # StepExecutor 生命周期管理
+│   └── result-validator.ts    # [新] 工具输出校验器
+├── trace-recorder/            # [新] 可观测性 Trace
+│   └── index.ts               # TraceRecorder + TraceEvent
 ├── orchestrator/              # 编排层
 │   ├── pipeline.ts            # 主流水线（Preference → Destination → BudgetLoop）
 │   ├── parallel.ts            # 并行执行器（Promise.allSettled）

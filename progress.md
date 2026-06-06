@@ -98,3 +98,22 @@
 - 端到端测试：验证餐厅推荐为当地特色（北京→烤鸭/涮肉，成都→火锅/川菜）
 - 端到端测试：验证市内交通有起终点描述，短距离步行
 - 验证 session 日志：确认 logs/{sessionId}.jsonl 包含完整对话链路和 LLM prompt/response
+
+### Phase 1~5 演进架构实现 (2026-06-07)
+
+- `(未提交)` feat: 新增 IntentRouter 模块 — 意图分类（simple_answer/slot_filling/deterministic_workflow/multi_agent_planning/human_confirmation）+ RouteDecision 输出机制
+- `(未提交)` feat: 升级 Business State Machine — 新增 ERROR_RECOVERABLE/ERROR_TERMINAL 状态，StateSpec 声明 requiredFields/exitCriteria/recoveryPolicy/humanConfirmation
+- `(未提交)` feat: 新增 StepExecutor — 统一 AgentStep 生命周期 pending→running→validating→succeeded/failed，超时+重试+错误分类
+- `(未提交)` feat: 新增 Tool Policy — ToolMetadata 扩展 riskLevel/costLevel/requiresNetwork/outputValidator
+- `(未提交)` feat: 新增 ResultValidator — 交通/酒店/行程输出校验器，支持注册自定义校验规则
+- `(未提交)` feat: 新增 TraceRecorder — 结构化 TraceEvent，8 种 actor（user/router/llm/agent/tool/source/validator/recovery），完整记录执行链路
+- `(未提交)` feat: 新增 ConversationSummary — 三层上下文（结构化状态/短期对话/压缩摘要），历史超过 10 轮后自动摘要
+- `(未提交)` feat: IntentRouter 集成到 TurnHandler — 每次用户输入先路由再决策，记录 route_decision 事件
+
+## 后续待办
+
+- 提交上述演进架构代码变更
+- 编译验证变更无 TypeScript 错误
+- 将 StepExecutor 集成到 TurnHandler 的搜索/规划步骤中
+- 将 TraceRecorder 集成到 ConversationOrchestrator 的状态迁移中
+- 为 IntentRouter 增加单元测试
