@@ -10,6 +10,7 @@ import { FallbackDataSource } from "../data-sources/fallback-data-source.js";
 import type { TravelDataSource } from "../data-sources/types.js";
 import { ParallelExecutor } from "./parallel.js";
 import { BudgetLoopController } from "./budget-loop.js";
+import { sessionLogger } from "../logging/session-logger.js";
 
 class CompositeDataSource implements TravelDataSource {
   constructor(
@@ -43,27 +44,31 @@ export class TravelPlanningPipeline {
   private readonly prefAgent: PreferenceAgent;
   private readonly destAgent: DestinationAgent;
   private readonly budgetLoop: BudgetLoopController;
+  private readonly activityAgent: ActivityAgent;
+  private readonly llmPlanAgent: LLMPlanAgent;
+  private readonly log: Logger;
 
   constructor(log?: Logger) {
-    const logger: Logger = log ?? pino({ level: "info", transport: { target: "pino-pretty", options: { colorize: false, translateTime: "SYS:HH:MM:ss" } } });
-    const webSearch = new WebSearchSource(logger);
+    this.log = log ?? pino({ level: "info" });
+    const webSearch = new WebSearchSource(this.log);
     const dataSource = new CompositeDataSource(
-      new FallbackDataSource(new AmadeusSource(), webSearch, logger),
-      new FallbackDataSource(new BookingSource(), webSearch, logger),
-      new FallbackDataSource(new AmapSource(), webSearch, logger),
-      new FallbackDataSource(new Train12306Source(logger), webSearch, logger),
+      new FallbackDataSource(new AmadeusSource(), webSearch, this.log),
+      new FallbackDataSource(new BookingSource(), webSearch, this.log),
+      new FallbackDataSource(new AmapSource(), webSearch, this.log),
+      new FallbackDataSource(new Train12306Source(this.log), webSearch, this.log),
     );
 
-    const flightAgent = new FlightAgent(logger, dataSource);
-    const hotelAgent = new HotelAgent(logger, dataSource);
-    const activityAgent = new LLMPlanAgent(logger, dataSource);
-    const budgetAgent = new BudgetAgent(logger, dataSource);
+    const flightAgent = new FlightAgent(this.log, dataSource);
+    const hotelAgent = new HotelAgent(this.log, dataSource);
+    this.llmPlanAgent = new LLMPlanAgent(this.log, dataSource);
+    this.activityAgent = new ActivityAgent(this.log, dataSource);
+    const budgetAgent = new BudgetAgent(this.log, dataSource);
 
-    this.prefAgent = new PreferenceAgent(logger);
-    this.destAgent = new DestinationAgent(logger);
+    this.prefAgent = new PreferenceAgent(this.log);
+    this.destAgent = new DestinationAgent(this.log);
 
-    const parallel = new ParallelExecutor([flightAgent, hotelAgent, activityAgent], logger);
-    this.budgetLoop = new BudgetLoopController(parallel, budgetAgent, logger);
+    const parallel = new ParallelExecutor([flightAgent, hotelAgent, this.llmPlanAgent], this.log);
+    this.budgetLoop = new BudgetLoopController(parallel, budgetAgent, this.log);
   }
 
   async run(preferences: UserPreferences): Promise<TravelPlanState> {
@@ -78,7 +83,32 @@ export class TravelPlanningPipeline {
     if (result.state === PlanningState.FAILED) return result;
 
     result = await this.budgetLoop.run(result);
+
+    // Fallback: if LLMPlanAgent degraded, generate activities with mock ActivityAgent
+    if (this.isActivityMissing(result) && result.state !== PlanningState.FAILED) {
+      this.log.warn("活动规划缺失，降级到 ActivityAgent (mock)。");
+      sessionLogger.append("pipeline", "pipeline_fallback", {
+        reason: "LLMPlanAgent 失败或超时",
+        fallback: "ActivityAgent",
+      });
+      try {
+        result = await this.activityAgent.run(result);
+      } catch (fallbackErr) {
+        const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        this.log.error({ error: msg }, "ActivityAgent fallback 也失败");
+        result.errorMessages.push(`活动规划失败: ${msg}`);
+      }
+    }
+
     return result;
+  }
+
+  private isActivityMissing(state: TravelPlanState): boolean {
+    return (
+      !state.activityResult ||
+      !state.activityResult.dayPlans ||
+      state.activityResult.dayPlans.length === 0
+    );
   }
 }
 

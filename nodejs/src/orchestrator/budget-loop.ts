@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 import { PlanningState, type TravelPlanState } from "../types/index.js";
 import type { BudgetAgent } from "../agents/budget-agent.js";
-import type { ParallelExecutor } from "./parallel.js";
+import type { ParallelExecutor, AgentRunResult } from "./parallel.js";
+import { sessionLogger } from "../logging/session-logger.js";
 import { settings } from "../config/settings.js";
 
 export class BudgetLoopController {
@@ -24,7 +25,19 @@ export class BudgetLoopController {
       this.log.info({ attempt, label }, "预算循环迭代");
 
       if (attempt === 0 || state.state === PlanningState.ADJUSTING) {
-        state = await this.parallelExecutor.run(state);
+        const { state: newState, results } = await this.parallelExecutor.run(state);
+        state = newState;
+
+        this.handleAgentFailures(state, results, attempt);
+
+        const unrecoverable = results.some(
+          (r) => !r.success && !r.degraded && r.agentName !== "activityAgent",
+        );
+        if (unrecoverable) {
+          this.log.error("核心 Agent 不可恢复失败");
+          state.state = PlanningState.FAILED;
+          return state;
+        }
       }
 
       state.state = PlanningState.BUDGET_CHECKING;
@@ -38,5 +51,34 @@ export class BudgetLoopController {
     this.log.warn("达到最大调整轮次");
     state.state = PlanningState.COMPLETED;
     return state;
+  }
+
+  private handleAgentFailures(
+    state: TravelPlanState,
+    results: AgentRunResult[],
+    attempt: number,
+  ): void {
+    const degraded = results.filter((r) => r.degraded);
+    const hardFailed = results.filter((r) => !r.success && !r.degraded);
+
+    for (const r of degraded) {
+      this.log.warn({ agent: r.agentName }, "Agent 降级运行");
+      sessionLogger.append("pipeline", "recovery_action", {
+        agent: r.agentName,
+        action: "degraded",
+        error: r.error,
+        attempt,
+      });
+    }
+
+    for (const r of hardFailed) {
+      this.log.error({ agent: r.agentName, error: r.error }, "Agent 不可恢复");
+      sessionLogger.append("pipeline", "recovery_action", {
+        agent: r.agentName,
+        action: "terminal",
+        error: r.error,
+        attempt,
+      });
+    }
   }
 }

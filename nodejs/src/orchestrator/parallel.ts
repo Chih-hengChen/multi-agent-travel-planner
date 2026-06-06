@@ -1,41 +1,113 @@
 import type { Logger } from "pino";
 import type { TravelPlanState } from "../types/index.js";
 import type { BaseAgent } from "../agents/base-agent.js";
-import { settings } from "../config/settings.js";
+
+export interface AgentRunResult {
+  agentName: string;
+  success: boolean;
+  timedOut: boolean;
+  retried: boolean;
+  degraded: boolean;
+  error?: string;
+}
+
+async function runWithTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    fn(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export class ParallelExecutor {
-  private readonly timeout: number;
-
   constructor(
     private readonly agents: BaseAgent[],
     private readonly log: Logger,
-    timeout?: number,
-  ) {
-    this.timeout = timeout ?? settings.PARALLEL_TIMEOUT;
-  }
+    private readonly defaultTimeoutMs = 120_000,
+    private readonly defaultMaxRetries = 1,
+  ) {}
 
-  async run(state: TravelPlanState): Promise<TravelPlanState> {
+  async run(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
     this.log.info({ agents: this.agents.length }, "并行执行开始");
 
-    const tasks = this.agents.map((agent) => {
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${agent.name} timed out after ${this.timeout}s`)), this.timeout * 1000),
-      );
-      return Promise.race([agent.run(state), timeoutPromise]).catch((err: Error) => err);
-    });
+    const results: AgentRunResult[] = [];
 
-    const results = await Promise.allSettled(tasks);
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i]!;
-      if (result.status === "rejected") {
-        const errMsg = `${this.agents[i]!.name} 并行执行失败: ${result.reason}`;
-        this.log.error({ agent: this.agents[i]!.name }, errMsg);
-        state.errorMessages.push(errMsg);
+    for (const agent of this.agents) {
+      const result = await this.runSingle(agent, state);
+      results.push(result);
+      if (result.error) {
+        state.errorMessages.push(`${agent.name}: ${result.error}`);
       }
     }
 
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      this.log.warn({ failed: failed.map((r) => r.agentName) }, "部分 Agent 执行失败");
+    }
+
     this.log.info("并行执行完成");
-    return state;
+    return { state, results };
+  }
+
+  private async runSingle(agent: BaseAgent, state: TravelPlanState): Promise<AgentRunResult> {
+    const baseResult: AgentRunResult = {
+      agentName: agent.name,
+      success: false,
+      timedOut: false,
+      retried: false,
+      degraded: false,
+    };
+
+    // Attempt 1: normal execution
+    const first = await this.tryRun(agent, state, this.defaultTimeoutMs);
+    if (first.success) return first;
+
+    // Attempt 2: retry with longer timeout
+    if (first.timedOut && this.defaultMaxRetries > 0) {
+      this.log.warn({ agent: agent.name }, "首次超时，尝试重试（1.5x 超时）");
+      const retry = await this.tryRun(agent, state, this.defaultTimeoutMs * 1.5);
+      retry.retried = true;
+      if (retry.success) return retry;
+      baseResult.error = retry.error;
+    } else {
+      baseResult.error = first.error;
+    }
+
+    // Degrade — let pipeline continue with partial data
+    baseResult.timedOut = true;
+    baseResult.degraded = true;
+    baseResult.success = true;
+
+    this.log.warn({ agent: agent.name, error: baseResult.error }, "Agent 降级执行");
+
+    return baseResult;
+  }
+
+  private async tryRun(
+    agent: BaseAgent,
+    state: TravelPlanState,
+    timeoutMs: number,
+  ): Promise<AgentRunResult> {
+    try {
+      await runWithTimeout(() => agent.run(state), timeoutMs, agent.name);
+      return { agentName: agent.name, success: true, timedOut: false, retried: false, degraded: false };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = msg.includes("超时") || msg.includes("timed out");
+      this.log.warn({ agent: agent.name, error: msg, timeout: isTimeout }, "Agent 执行失败");
+      return {
+        agentName: agent.name,
+        success: false,
+        timedOut: isTimeout,
+        retried: false,
+        degraded: false,
+        error: msg,
+      };
+    }
   }
 }

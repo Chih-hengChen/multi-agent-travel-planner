@@ -25,7 +25,11 @@ export type LogEventType =
   | "error"
   | "route_decision"
   | "step_status"
-  | "trace_event";
+  | "trace_event"
+  | "agent_retry"
+  | "agent_degraded"
+  | "recovery_action"
+  | "pipeline_fallback";
 
 interface LogEntry {
   ts: string;
