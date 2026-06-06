@@ -7,7 +7,7 @@ import { sessionLogger } from "../logging/session-logger.js";
 import { getSessionId } from "../logging/session-context.js";
 import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
-import { buildSystemPrompt } from "./llm-plan-prompt.js";
+import { buildSystemPrompt, PROMPT_VERSION } from "./llm-plan-prompt.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
@@ -255,6 +255,7 @@ export class LLMPlanAgent extends BaseAgent {
       sessionLogger.append(sid, "llm_request", {
         model: settings.LLM_MODEL,
         caller: "LLMPlanAgent",
+        promptVersion: PROMPT_VERSION,
         tools: (tools as Array<Record<string, unknown>>).map((t) => t.name),
         messages: messages.map((m) => ({
           role: m.role,

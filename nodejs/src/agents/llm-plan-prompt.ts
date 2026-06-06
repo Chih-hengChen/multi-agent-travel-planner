@@ -1,5 +1,13 @@
 import type { UserPreferences } from "../types/index.js";
 
+/**
+ * Prompt version tracking.
+ * Bump this when prompt structure or rules change significantly.
+ * Format: YYYYMMDD.N where N is the revision within that day.
+ * Logged in every llm_request trace for reproducibility.
+ */
+export const PROMPT_VERSION = "20260607.1";
+
 export function buildSystemPrompt(
   pref: UserPreferences,
   city: string,
@@ -29,6 +37,7 @@ export function buildSystemPrompt(
   const systemLayer = [
     "# 角色",
     "你是资深旅行规划师。根据用户需求、实时天气、百科知识和搜索结果，生成可执行的每日行程。",
+    "[prompt v" + PROMPT_VERSION + "]",
     "",
     "# 类型定义（严格遵守）",
     "",
