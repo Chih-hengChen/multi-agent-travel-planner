@@ -5,6 +5,7 @@ import { settings } from "../config/settings.js";
 import { BaseAgent } from "./base-agent.js";
 import { sessionLogger } from "../logging/session-logger.js";
 import { getSessionId } from "../logging/session-context.js";
+import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
@@ -15,8 +16,31 @@ export class LLMPlanAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const days = this.getTravelDays(pref.startDate, pref.endDate);
 
+    // Pre-fetch weather for planning
+    let weatherSummary = "";
+    try {
+      const weatherSource = new AmapWeatherSource();
+      const weather = await weatherSource.getFullWeather(dest.city);
+      if (weather) {
+        if (weather.live) {
+          weatherSummary += "【当前天气】" + weather.live.city + " " + weather.live.weather
+            + " " + weather.live.temperature + "℃ " + weather.live.winddirection + "风 " + weather.live.windpower + "级\n";
+        }
+        if (weather.forecast?.casts?.length) {
+          weatherSummary += "【天气预报】\n";
+          for (const c of weather.forecast.casts) {
+            weatherSummary += c.date + " 白天:" + c.dayweather + " " + c.daytemp + "℃"
+              + " 夜间:" + c.nightweather + " " + c.nighttemp + "℃"
+              + " " + c.daywind + "风" + c.daypower + "级\n";
+          }
+        }
+      }
+    } catch {
+      // Weather unavailable, continue without it
+    }
+
     const tools = this.buildToolDefs();
-    const systemPrompt = this.buildSystemPrompt(pref, dest.city, days);
+    const systemPrompt = this.buildSystemPrompt(pref, dest.city, days, weatherSummary);
     const messages: Array<{ role: "user" | "assistant"; content: string | unknown[] }> = [
       { role: "user", content: systemPrompt },
     ];
@@ -105,10 +129,21 @@ export class LLMPlanAgent extends BaseAgent {
           required: ["query"],
         },
       },
+      {
+        name: "search_weather",
+        description: "查询指定城市的实时天气和未来天气预报。用于决定行程安排、穿衣建议、是否需要调整计划。",
+        input_schema: {
+          type: "object",
+          properties: {
+            city: { type: "string", description: "城市名" },
+          },
+          required: ["city"],
+        },
+      },
     ];
   }
 
-  private buildSystemPrompt(pref: UserPreferences, city: string, days: string[]): string {
+  private buildSystemPrompt(pref: UserPreferences, city: string, days: string[], weatherSummary?: string): string {
     const transportLines = this.formatTransport(pref);
     const hotelLine = this.formatHotel(pref);
     const mustVisit = pref.mustVisitAttractions?.length
@@ -142,6 +177,7 @@ export class LLMPlanAgent extends BaseAgent {
       "- 餐饮偏好：" + (pref.diningPreference === "local_specialties" ? "当地特色美食" : pref.diningPreference),
       transportLines,
       hotelLine,
+      weatherSummary ? "\n## 天气预报\n" + weatherSummary : "",
       "## 核心规则（严格遵守）",
       "",
       "### 1. 必去景点完整覆盖",
@@ -170,7 +206,15 @@ export class LLMPlanAgent extends BaseAgent {
       "- 禁止推荐：麦当劳、肯德基、必胜客、星巴克等连锁快餐",
       "- description 写清楚推荐理由和招牌菜",
       "",
-      "### 6. 输出JSON格式",
+      "### 6. 天气与衣物建议",
+      "- 根据天气预报合理安排每日行程",
+      "- 雨天/大风天：优先安排室内活动（博物馆、国博、商场），避免户外长时间活动",
+      "- 高温天（>35℃）：减少户外暴晒景点，多安排室内或有遮阴的活动",
+      "- 低温天（<5℃）：增加室内暖和地方，提醒携带外套",
+      "- 在活动的 description 中标注天气提醒和穿衣建议",
+      "- 如果天气极端恶劣（暴雨、台风、暴雪），应建议用户调整当日行程",
+      "",
+      "### 7. 输出JSON格式",
       "subType 取值为：attraction | dining | transit",
       "timeSlot 取值为：morning | afternoon | evening",
       "price：单人价格（元），景点0表示免费",
@@ -178,10 +222,12 @@ export class LLMPlanAgent extends BaseAgent {
       "durationHours：预估耗时（小时）",
       "",
       "## 工作流程",
-      "1. 对每个必去景点，调用 search_attractions 精确搜索",
-      "2. 按兴趣标签搜索更多景点",
-      "3. 为早/午/晚餐搜索当地特色餐厅",
-      "4. 综合所有搜索结果编制行程",
+      "1. 先调用 search_weather 查询目的地天气预报",
+      "2. 对每个必去景点，调用 search_attractions 精确搜索",
+      "3. 按兴趣标签搜索更多景点",
+      "4. 为早/午/晚餐搜索当地特色餐厅",
+      "5. 可选调用 search_xhs_notes 获取当地美食/游玩真实推荐",
+      "6. 综合天气、景点、餐厅信息编制行程",
       "",
       "## 输出JSON",
       "{",
@@ -306,6 +352,30 @@ export class LLMPlanAgent extends BaseAgent {
         });
         const summary = results.slice(0, 8).map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
         return { success: true, count: results.length, restaurants: summary };
+      }
+
+      if (name === "search_weather") {
+        try {
+          const weatherSource = new AmapWeatherSource();
+          const result = await weatherSource.getFullWeather(String(input.city ?? city));
+          if (!result) return { success: true, weather: "天气数据暂不可用" };
+          const lines: string[] = [];
+          if (result.live) {
+            lines.push("【当前天气】" + result.live.city + " " + result.live.weather
+              + " " + result.live.temperature + "℃ " + result.live.winddirection + "风 " + result.live.windpower + "级");
+          }
+          if (result.forecast?.casts?.length) {
+            lines.push("【未来天气预报】");
+            for (const c of result.forecast.casts) {
+              lines.push(c.date + " 白天:" + c.dayweather + " " + c.daytemp + "℃"
+                + " 夜间:" + c.nightweather + " " + c.nighttemp + "℃"
+                + " " + c.daywind + "风" + c.daypower + "级");
+            }
+          }
+          return { success: true, weather: lines.join("\n") };
+        } catch {
+          return { success: true, weather: "天气查询失败" };
+        }
       }
 
       if (name === "search_xhs_notes") {
