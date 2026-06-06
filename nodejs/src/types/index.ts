@@ -227,6 +227,10 @@ export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 export interface PlanSummary {
   destination: string;
   country: string;
+  departureCity?: string;
+  departureDate?: string;
+  returnDate?: string;
+  numTravelers?: number;
   flightCost: number;
   trainCost: number;
   hotelCost: number;
@@ -236,6 +240,11 @@ export interface PlanSummary {
   withinBudget: boolean;
   adjustmentRounds: number;
   hotelName: string;
+  hotelStarRating?: number;
+  hotelUserRating?: number;
+  hotelPricePerNight?: number;
+  hotelCheckIn?: string;
+  hotelCheckOut?: string;
   days: number;
   highlights: string[];
   warnings: string[];
@@ -245,6 +254,13 @@ export interface PlanSummary {
   trainOutbound: Train | null;
   trainReturn: Train | null;
   hotels: Hotel[];
+  hotelAlternatives?: Array<{
+    name: string;
+    pricePerNight: number;
+    starRating: number;
+    userRating: number;
+    note: string;
+  }>;
   dayPlans: DayPlan[];
 }
 

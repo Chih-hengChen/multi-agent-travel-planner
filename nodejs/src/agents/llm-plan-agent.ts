@@ -3,6 +3,8 @@ import { ActivitySubType, type Activity, type DayPlan, type TravelPlanState, typ
 import type { TravelDataSource } from "../data-sources/types.js";
 import { settings } from "../config/settings.js";
 import { BaseAgent } from "./base-agent.js";
+import { sessionLogger } from "../logging/session-logger.js";
+import { getSessionId } from "../logging/session-context.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
@@ -173,6 +175,7 @@ ${transportLines}${hotelLine}
   private async callLlmWithTools(
     messages: Array<{ role: string; content: string | unknown[] }>,
     tools: unknown[],
+    sessionId?: string,
   ) {
     const body: Record<string, unknown> = {
       model: settings.LLM_MODEL,
@@ -181,6 +184,21 @@ ${transportLines}${hotelLine}
       temperature: 0.7,
       max_tokens: 8192,
     };
+
+    const sid = sessionId ?? getSessionId();
+    if (sid) {
+      sessionLogger.append(sid, "llm_request", {
+        model: settings.LLM_MODEL,
+        caller: "LLMPlanAgent",
+        tools: (tools as Array<Record<string, unknown>>).map((t) => t.name),
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string"
+            ? m.content.slice(0, 2000)
+            : `[${(m.content as unknown[]).length} blocks]`,
+        })),
+      });
+    }
 
     const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
       method: "POST",
@@ -198,10 +216,22 @@ ${transportLines}${hotelLine}
       throw new Error(`LLM Plan Agent API ${resp.status}: ${err}`);
     }
 
-    return resp.json() as Promise<{
+    const data = await resp.json() as {
       content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
       stop_reason?: string;
-    }>;
+    };
+
+    if (sid) {
+      sessionLogger.append(sid, "llm_response", {
+        model: settings.LLM_MODEL,
+        caller: "LLMPlanAgent",
+        stopReason: data.stop_reason,
+        toolCalls: data.content.filter((c) => c.type === "tool_use").map((c) => c.name),
+        textLength: data.content.find((c) => c.type === "text")?.text?.length ?? 0,
+      });
+    }
+
+    return data;
   }
 
   private async executeTool(name: string, input: Record<string, unknown>, city: string, pref: UserPreferences) {

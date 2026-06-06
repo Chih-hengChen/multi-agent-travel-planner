@@ -262,11 +262,29 @@ function mapStyle(style?: string): TravelStyle {
 export function buildPlanSummary(state: TravelPlanState): PlanSummary {
   const dest = state.selectedDestination;
   const bb = state.budgetBreakdown;
+  const prefs = state.preferences;
   const days = state.activityResult?.dayPlans.length ?? 0;
+
+  const hotel = state.hotelResult?.recommended;
+  const allHotels = state.hotelResult?.hotels ?? [];
+  const hotelAlternatives = allHotels
+    .filter((h) => h.name !== hotel?.name)
+    .slice(0, 2)
+    .map((h) => ({
+      name: h.name,
+      pricePerNight: h.pricePerNight,
+      starRating: h.starRating,
+      userRating: h.userRating,
+      note: "",
+    }));
 
   return {
     destination: dest?.city ?? "",
     country: dest?.country ?? "",
+    departureCity: prefs?.departureCity,
+    departureDate: prefs?.startDate,
+    returnDate: prefs?.endDate,
+    numTravelers: prefs?.numTravelers,
     flightCost: bb?.flightCost ?? 0,
     trainCost: bb?.trainCost ?? 0,
     hotelCost: bb?.hotelCost ?? 0,
@@ -275,7 +293,10 @@ export function buildPlanSummary(state: TravelPlanState): PlanSummary {
     budget: bb?.budget ?? 0,
     withinBudget: bb?.isWithinBudget ?? true,
     adjustmentRounds: state.adjustmentRound,
-    hotelName: state.hotelResult?.recommended?.name ?? "",
+    hotelName: hotel?.name ?? "",
+    hotelStarRating: hotel?.starRating,
+    hotelUserRating: hotel?.userRating,
+    hotelPricePerNight: hotel?.pricePerNight,
     days,
     highlights: dest?.highlights ?? [],
     warnings: state.errorMessages,
@@ -284,7 +305,8 @@ export function buildPlanSummary(state: TravelPlanState): PlanSummary {
     returnFlights: state.flightResult?.returnFlights ?? [],
     trainOutbound: state.trainOutbound ?? null,
     trainReturn: state.trainReturn ?? null,
-    hotels: state.hotelResult?.hotels ?? [],
+    hotels: allHotels,
+    hotelAlternatives: hotelAlternatives.length > 0 ? hotelAlternatives : undefined,
     dayPlans: state.activityResult?.dayPlans ?? [],
   };
 }

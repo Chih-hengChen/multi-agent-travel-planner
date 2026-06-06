@@ -178,39 +178,148 @@ function renderPlanCard(plan) {
   const editBtn = editMode
     ? `<div class="flex gap-2 mb-2"><button onclick="savePlanEdit()" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">保存</button><button onclick="cancelPlanEdit()" class="text-xs border px-3 py-1 rounded-lg hover:bg-gray-100">取消</button></div>`
     : `<button onclick="enterEditMode()" class="text-xs text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-50 float-right">编辑行程</button>`;
+
+  const fromCity = plan.departureCity || '';
+  const dateRange = plan.departureDate && plan.returnDate
+    ? `${fmtDate(plan.departureDate)} - ${fmtDate(plan.returnDate)}`
+    : `${plan.days || ''}天`;
+  const transportLabel = plan.transportMode === 'train' ? '高铁' : '航班';
+
+  const costLines = [];
+  if (plan.trainCost > 0) costLines.push(`往返${transportLabel}，${plan.trainCost.toLocaleString()}元`);
+  else if (plan.flightCost > 0) costLines.push(`往返${transportLabel}，${plan.flightCost.toLocaleString()}元`);
+  if (plan.hotelCost > 0) costLines.push(`酒店${plan.hotelCost.toLocaleString()}元`);
+  if (plan.activityCost > 0) costLines.push(`活动${plan.activityCost.toLocaleString()}元`);
+
+  function renderTransportDetail(label, t) {
+    if (!t) return '';
+    return `<div class="text-xs mt-1">${label}：<span class="font-medium">${esc(t.trainNo)}</span> ${esc(t.departureCity||t.departStation)} → ${esc(t.arrivalCity||t.arriveStation)}，${t.departureTime} - ${t.arrivalTime}，<span class="text-blue-600">¥${t.price}</span></div>`;
+  }
+
+  function renderDayActivity(a) {
+    const icon = a.subType === 'dining' ? '🍽️' : a.subType === 'transit' ? '🚌' : '📍';
+    const timeSlot = a.timeSlot ? `<span class="text-gray-400">${esc(a.timeSlot)}</span> ` : '';
+    const desc = a.description ? `<div class="text-gray-500 mt-0.5 text-xs ml-4">${esc(a.description)}</div>` : '';
+    const cost = a.price > 0 ? ` <span class="text-blue-600">¥${a.price}</span>` : '';
+    return `<div class="py-1.5 border-b border-gray-100 last:border-b-0">
+      <div class="flex items-start gap-1.5">
+        <span class="mt-0.5">${icon}</span>
+        <div class="flex-1">
+          <div><span class="font-medium text-gray-800">${timeSlot}${esc(a.name)}</span>${cost}</div>
+          ${desc}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  let hotelAltHtml = '';
+  if (plan.hotelAlternatives && plan.hotelAlternatives.length > 0) {
+    hotelAltHtml = '<div class="mt-2 text-xs text-gray-500">酒店备选：';
+    hotelAltHtml += plan.hotelAlternatives.map(h =>
+      `${esc(h.name)}，¥${h.pricePerNight}/晚${h.note ? '，' + esc(h.note) : ''}`
+    ).join('；');
+    hotelAltHtml += '</div>';
+  }
+
+  const hotelStay = plan.hotelCheckIn && plan.hotelCheckOut
+    ? `${plan.hotelCheckIn} 入住 — ${plan.hotelCheckOut} 退房`
+    : plan.departureDate && plan.returnDate
+      ? `${plan.departureDate} — ${plan.returnDate}`
+      : '';
+
   let html = `
-    <div class="plan-card">
-      <div class="flex items-center justify-between">
-        <h3>📍 ${esc(plan.destination)}，${esc(plan.country)}　<span class="text-sm font-normal text-gray-500">${plan.days || ''}天行程 · ${plan.transportMode === 'train' ? '🚄 高铁' : '✈️ 航班'}</span></h3>
+    <div class="plan-card !bg-white !border-gray-200">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <h3 class="text-base font-bold text-gray-900">${fromCity ? esc(fromCity) + '出发' : ''}${esc(plan.destination)}旅行计划</h3>
+          <div class="text-xs text-gray-400 mt-0.5">${dateRange} · ${plan.numTravelers ? plan.numTravelers + '人' : ''}</div>
+        </div>
         ${editMode ? '' : editBtn}
       </div>
       ${editMode ? editBtn : ''}
-      <div class="grid grid-cols-3 gap-3 text-center text-xs my-3">
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">${plan.transportMode === 'train' ? '高铁' : '机票'}</div><div class="font-bold text-blue-600">¥${(plan.transportMode === 'train' ? plan.trainCost : plan.flightCost).toLocaleString()}</div></div>
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">酒店</div><div class="font-bold text-green-600">¥${plan.hotelCost.toLocaleString()}</div></div>
-        <div class="bg-white rounded-lg p-2"><div class="text-gray-400">活动</div><div class="font-bold text-purple-600">¥${plan.activityCost.toLocaleString()}</div></div>
+      <div class="bg-blue-50 rounded-lg p-3 mb-3">
+        <div class="text-sm font-bold text-gray-800">合计花费：¥${plan.totalCost.toLocaleString()}</div>
+        <div class="text-xs text-gray-500 mt-1">${costLines.join('，')}</div>
       </div>
-      <div class="flex items-center gap-2 text-xs mb-1">
-        <span class="font-semibold">总计 ¥${plan.totalCost.toLocaleString()}</span>
-        <span class="text-gray-400">/ 预算 ¥${plan.budget.toLocaleString()}</span>
+      <div class="flex items-center gap-2 text-xs mb-2">
+        <span class="font-semibold">预算 ¥${plan.budget.toLocaleString()}</span>
         <span class="ml-auto ${plan.withinBudget ? 'text-green-600' : 'text-red-600'} font-semibold">${statusText}</span>
       </div>
       <div class="cost-bar"><div class="cost-bar-fill ${barColor}" style="width:${pct}%"></div></div>`;
+
+  if (plan.transportMode === 'train' && (plan.trainOutbound || plan.trainReturn)) {
+    html += '<div class="mt-3 pt-3 border-t border-gray-100">';
+    html += '<div class="text-xs font-semibold text-gray-700 mb-1">🚄 出行交通：往返' + transportLabel + '</div>';
+    html += renderTransportDetail('去程', plan.trainOutbound);
+    html += renderTransportDetail('返程', plan.trainReturn);
+    html += '</div>';
+  } else if (plan.transportMode === 'flight' && (plan.outboundFlights?.length > 0 || plan.returnFlights?.length > 0)) {
+    html += '<div class="mt-3 pt-3 border-t border-gray-100">';
+    html += '<div class="text-xs font-semibold text-gray-700 mb-1">✈️ 出行交通：往返' + transportLabel + '</div>';
+    if (plan.outboundFlights[0]) {
+      const f = plan.outboundFlights[0];
+      html += `<div class="text-xs mt-1">去程：<span class="font-medium">${esc(f.flightNo)}</span> ${esc(f.departureCity)} → ${esc(f.arrivalCity)}，${f.departureTime?.slice(11,16)} - ${f.arrivalTime?.slice(11,16)}，<span class="text-blue-600">¥${f.price}</span></div>`;
+    }
+    if (plan.returnFlights[0]) {
+      const f = plan.returnFlights[0];
+      html += `<div class="text-xs mt-1">返程：<span class="font-medium">${esc(f.flightNo)}</span> ${esc(f.departureCity)} → ${esc(f.arrivalCity)}，${f.departureTime?.slice(11,16)} - ${f.arrivalTime?.slice(11,16)}，<span class="text-blue-600">¥${f.price}</span></div>`;
+    }
+    html += '</div>';
+  }
+
   if (plan.hotelName) {
-    html += `<div class="text-xs text-gray-500 mt-2">🏨 推荐酒店：${esc(plan.hotelName)}</div>`;
+    html += '<div class="mt-3 pt-3 border-t border-gray-100">';
+    html += '<div class="text-xs font-semibold text-gray-700 mb-1">🏨 酒店选择</div>';
+    html += `<div class="text-xs">${esc(plan.hotelName)}`;
+    if (plan.hotelStarRating) html += ` ${'⭐'.repeat(Math.min(plan.hotelStarRating,5))}`;
+    if (plan.hotelPricePerNight) html += `，¥${plan.hotelPricePerNight}/晚`;
+    html += '</div>';
+    if (hotelStay) html += `<div class="text-xs text-gray-400 mt-0.5">${hotelStay}</div>`;
+    html += hotelAltHtml;
+    html += '</div>';
   }
-  if (plan.highlights?.length) {
-    html += `<div class="text-xs text-gray-500 mt-1">🎯 亮点：${plan.highlights.map(h => esc(h)).join('、')}</div>`;
-  }
-  if (plan.adjustmentRounds > 0) {
-    html += `<div class="text-xs text-amber-500 mt-1">⚠️ 经 ${plan.adjustmentRounds} 轮预算调整</div>`;
-  }
+
   if (plan.warnings?.length) {
-    html += `<div class="text-xs text-amber-500 mt-1">⚠️ ${plan.warnings.join('；')}</div>`;
+    html += `<div class="mt-2 text-xs text-amber-600">⚠️ ${plan.warnings.join('；')}</div>`;
   }
+
+  if (plan.dayPlans?.length > 0) {
+    html += '<div class="mt-3 pt-3 border-t border-gray-100">';
+    html += '<div class="text-xs font-semibold text-gray-700 mb-2">📅 具体行程</div>';
+    if (editMode) {
+      html += renderEditableDayPlans(editingPlan);
+    } else {
+      for (let di = 0; di < plan.dayPlans.length; di++) {
+        const day = plan.dayPlans[di];
+        const dayLabel = di === 0 ? '出发日' : `第 ${di + 1} 天`;
+        html += `<div class="bg-gray-50 rounded-lg p-3 mb-2 last:mb-0">`;
+        html += `<div class="text-sm font-bold text-gray-700 mb-1">${fmtDate(day.date)} ${dayLabel}</div>`;
+        html += '<div class="divide-y divide-gray-100">';
+        for (const a of day.activities) {
+          html += renderDayActivity(a);
+        }
+        html += '</div>';
+        if (day.dayCost > 0) {
+          html += `<div class="text-xs text-right text-gray-400 mt-1">本日花费：¥${day.dayCost.toLocaleString()}</div>`;
+        }
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">📅 具体行程待生成</div>';
+  }
+
   html += '</div>';
   html += renderDataSources(plan);
   return html;
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const parts = d.split('-');
+  if (parts.length === 3) return `${parseInt(parts[1])}.${parseInt(parts[2])}`;
+  return d;
 }
 
 function renderDataSources(plan) {
