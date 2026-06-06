@@ -7,6 +7,7 @@ import { sessionLogger } from "../logging/session-logger.js";
 import { getSessionId } from "../logging/session-context.js";
 import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
+import { buildSystemPrompt } from "./llm-plan-prompt.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
@@ -17,7 +18,6 @@ export class LLMPlanAgent extends BaseAgent {
     const dest = state.selectedDestination!;
     const days = this.getTravelDays(pref.startDate, pref.endDate);
 
-    // Pre-fetch Baike city knowledge and weather for planning
     let cityKnowledge = "";
     try {
       const webSearch = new WebSearchSource(this.log);
@@ -25,9 +25,7 @@ export class LLMPlanAgent extends BaseAgent {
       if (cityKnowledge) {
         this.log.info({ city: dest.city, len: cityKnowledge.length }, "city-knowledge: fetched for LLM plan");
       }
-    } catch {
-      // City knowledge unavailable, continue without it
-    }
+    } catch { /* city knowledge unavailable */ }
 
     let weatherSummary = "";
     try {
@@ -47,39 +45,33 @@ export class LLMPlanAgent extends BaseAgent {
           }
         }
       }
-    } catch {
-      // Weather unavailable, continue without it
-    }
+    } catch { /* weather unavailable */ }
 
     const tools = this.buildToolDefs();
-    const systemPrompt = this.buildSystemPrompt(pref, dest.city, days, weatherSummary, cityKnowledge);
+    const systemPrompt = buildSystemPrompt(pref, dest.city, days, weatherSummary, cityKnowledge);
     let messages: Array<{ role: "user" | "assistant"; content: string | unknown[] }> = [
       { role: "user", content: systemPrompt },
     ];
 
-    // Track which state we're in for the state machine
     let hasSearchedWeather = false;
     let hasSearchedAttractions = false;
     let hasSearchedDining = false;
     const toolCallHistory: string[] = [];
-    const MAX_CONTEXT_CHARS = 10_000;
+    const MAX_CONTEXT_CHARS = 100_000;
 
     const maxRounds = 10;
     for (let round = 0; round < maxRounds; round++) {
-      // --- State machine: inject current state into context ---
       let currentState = "COMPILE";
       if (!hasSearchedWeather) currentState = "FETCH_WEATHER";
       else if (!hasSearchedAttractions) currentState = "SEARCH_ATTRACTIONS";
       else if (!hasSearchedDining) currentState = "SEARCH_DINING";
 
-      // Keep the last systemPrompt state hint lightweight — append to latest user message
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === "user" && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
         const stateHint = "\n[state: " + currentState + "] [round: " + (round + 1) + "/" + maxRounds + "]";
         if (typeof lastMsg.content[lastMsg.content.length - 1] === "string") {
           (lastMsg.content[lastMsg.content.length - 1] as string) += stateHint;
         } else {
-          // Append as text block
           (lastMsg.content as unknown[]).push({ type: "text", text: stateHint });
         }
       }
@@ -98,7 +90,6 @@ export class LLMPlanAgent extends BaseAgent {
         }
       }
 
-      // Update state machine
       for (const tc of toolCalls) {
         toolCallHistory.push(tc.name);
         if (tc.name === "search_weather") hasSearchedWeather = true;
@@ -117,12 +108,10 @@ export class LLMPlanAgent extends BaseAgent {
         return state;
       }
 
-      // Execute tools and collect results
       const toolResults: unknown[] = [];
       for (const tc of toolCalls) {
         const result = await this.executeTool(tc.name, tc.input, dest.city, pref);
 
-        // Truncate verbose tool results before storing
         let contentStr = JSON.stringify(result);
         if (contentStr.length > 2000) {
           contentStr = JSON.stringify(this.truncateToolResult(tc.name, result));
@@ -136,7 +125,6 @@ export class LLMPlanAgent extends BaseAgent {
       }
       messages.push({ role: "user", content: toolResults });
 
-      // --- Context window management ---
       messages = this.compressContext(messages, MAX_CONTEXT_CHARS, round);
     }
 
@@ -144,9 +132,6 @@ export class LLMPlanAgent extends BaseAgent {
     return this.fallbackPlan(state, days, dest.city, pref);
   }
 
-  /**
-   * Truncate verbose tool results: keep only essential fields.
-   */
   private truncateToolResult(toolName: string, result: Record<string, unknown>): Record<string, unknown> {
     if (toolName === "search_attractions" && result.attractions) {
       const list = result.attractions as string;
@@ -161,11 +146,6 @@ export class LLMPlanAgent extends BaseAgent {
     return result;
   }
 
-  /**
-   * Compress context if total message content exceeds threshold.
-   * Keeps: system prompt, last 2 assistant messages + their tool results.
-   * Summarizes: everything older gets replaced with a condensed note.
-   */
   private compressContext(
     msgs: Array<{ role: "user" | "assistant"; content: string | unknown[] }>,
     maxChars: number,
@@ -174,9 +154,8 @@ export class LLMPlanAgent extends BaseAgent {
     const totalLen = JSON.stringify(msgs).length;
     if (totalLen <= maxChars || msgs.length <= 3) return msgs;
 
-    // Keep first (system), last 4 messages (2 rounds of assistant+user)
-    const keepHead = 1; // system
-    const keepTail = 4; // last 2 rounds
+    const keepHead = 1;
+    const keepTail = 4;
 
     const head = msgs.slice(0, keepHead);
     const tail = msgs.slice(-keepTail);
@@ -184,7 +163,6 @@ export class LLMPlanAgent extends BaseAgent {
 
     if (middle.length === 0) return msgs;
 
-    // Count tools called in middle
     const toolCounts: Record<string, number> = {};
     for (const m of middle) {
       if (m.role === "assistant" && Array.isArray(m.content)) {
@@ -259,180 +237,6 @@ export class LLMPlanAgent extends BaseAgent {
     ];
   }
 
-  private buildSystemPrompt(pref: UserPreferences, city: string, days: string[], weatherSummary?: string, cityKnowledge?: string): string {
-    const transportLines = this.formatTransport(pref);
-    const hotelLine = this.formatHotel(pref);
-    const mustVisit = pref.mustVisitAttractions?.length
-      ? pref.mustVisitAttractions.join("、") : "无";
-
-    const hotelName = pref.selectedHotel
-      ? (pref.selectedHotel as Record<string, unknown>).name || "已选"
-      : "待定";
-
-    const haveDates = days.join("、");
-
-    const cuisineSamples: Record<string, string> = {
-      "北京": "烤鸭、涮肉、炸酱面、豆汁儿",
-      "成都": "火锅、串串、川菜、担担面",
-      "西安": "羊肉泡馍、凉皮、肉夹馍",
-      "广州": "早茶、烧腊、肠粉",
-    };
-    const cuisine = cuisineSamples[city] || "当地特色菜系";
-
-    const budgetStr = String(pref.budget);
-
-    // ─── System Layer: 角色 + 不变规则 + 类型契约 ─────────────
-    const systemLayer = [
-      "# 角色",
-      "你是资深旅行规划师。根据用户需求、实时天气、百科知识和搜索结果，生成可执行的每日行程。",
-      "",
-      "# 类型定义（严格遵守）",
-      "",
-      "```typescript",
-      "type SubType = \"attraction\" | \"dining\" | \"transit\";",
-      "type TimeSlot = \"morning\" | \"afternoon\" | \"evening\";",
-      "type MealType = \"breakfast\" | \"lunch\" | \"dinner\";",
-      "",
-      "type Activity = {",
-      "  name: string;           // 景点/餐厅/交通名称",
-      '  subType: SubType;       // 唯一分类（见下方规则）',
-      '  timeSlot: TimeSlot;     // 时段（morning=6-12, afternoon=12-18, evening=18-）',
-      "  durationHours: number;  // 耗时（0.5的倍数）",
-      "  price: number;          // 单人价格，0=免费",
-      "  description: string;    // 不少于30字，含推荐理由/路线/天气提醒",
-      "  mealType?: MealType;    // 仅 dining 类型需要",
-      "};",
-      "",
-      "type DayPlan = {",
-      "  date: string;           // YYYY-MM-DD",
-      "  theme: string;          // 当日主题，如\"故宫·天安门\"",
-      "  activities: Activity[]; // 完整活动链（含 transit 衔接）",
-      "};",
-      "",
-      "type Itinerary = {",
-      "  days: DayPlan[];",
-      "  estimatedTotalCost: number;  // 所有 price 之和 × numTravelers",
-      '  warnings?: string[];         // 降级/不确定信息标注',
-      "};",
-      "```",
-      "",
-      "# 规划规则",
-      "",
-      "## 景点覆盖",
-      "- 必去景点必须全部出现在行程中，逐一检查：" + mustVisit,
-      "- 同区域景点安排同一天，避免跨区折返跑",
-      "",
-      "## 首末日",
-      "- 抵达日：根据到达时间动态调整。下午到→只排下午+晚上，预留入住休整",
-      "- 离开日：至少提前2小时去车站，最多排上午活动，不排晚餐",
-      "",
-      "## 预算",
-      "- 所有 activities.price 之和 × " + pref.numTravelers + " ≤ ¥" + budgetStr,
-      "- 超预算时：降餐厅档次或跳过收费景点的付费项目",
-      "- estimatedTotalCost 反映估算总花费",
-      "",
-      "## 交通",
-      "- 每个活动前后都要有 transit 衔接（首活动从酒店出发，末活动返回酒店）",
-      "- transit.name = \"起点 → 终点（方式）\"",
-      "- transit.price = 预估交通费（地铁≈5, 出租≈30, 公交≈2）",
-      "- transit.durationHours = 路途时间",
-      "- transit.description = \"从XX到YY，地铁X号线，约N分钟\"",
-      "",
-      "## 餐饮",
-      "- 只推荐当地特色，如" + cuisine + "。禁止连锁快餐（麦当劳/肯德基等）",
-      "- description：招牌菜 + 推荐理由",
-      "",
-      "## 天气",
-      "- 雨天/大风→室内活动；高温>35℃→减少暴晒；低温<5℃→提醒带外套",
-      "- 极端天气（暴雨/暴雪/台风）→建议调整当日行程",
-      "- 在 activity.description 中标注天气提醒和穿衣建议",
-      "",
-    ].join("\n");
-
-    // ─── Context Layer: 用户信息 + 天气 + 百科 ───────────────
-    const contextLayer = [
-      "# 当前行程上下文",
-      "",
-      "## 用户信息",
-      "- 出发城市：" + pref.departureCity + "  →  目的地：" + city,
-      "- 日期：" + haveDates + "  |  人数：" + pref.numTravelers + "人",
-      "- 总预算：¥" + budgetStr,
-      "- 兴趣：" + (pref.interests.join("、") || "无特别指定"),
-      "- 必去景点：" + mustVisit,
-      transportLines,
-      hotelLine,
-      weatherSummary ? "\n## 天气预报\n" + weatherSummary : "",
-      cityKnowledge ? "\n## 目的地百科（百度百科）\n" + cityKnowledge.slice(0, 2500) : "",
-      "",
-    ].filter(Boolean).join("\n");
-
-    // ─── Task Layer: ReAct 指令 + 自检清单 + few-shot ─────────
-    const taskLayer = [
-      "# 执行流程",
-      "",
-      "## 阶段一：ReAct 推理循环",
-      "",
-      "逐轮执行以下三步骤，直到信息足够：",
-      "",
-      "Thought — 分析：已知什么？缺什么？下一步该做什么？",
-      "Action  — 调用一个工具（search_weather / search_attractions / search_restaurants / search_xhs_notes）",
-      "（Observation 自动返回）",
-      "",
-      "参考路径：",
-      "  第1轮  Thought: " + city + "天气如何？必去景点" + mustVisit + "先查具体信息",
-      "        Action: search_weather + 对必去景点逐个 search_attractions",
-      "  第2轮  Thought: 查到了哪些？还缺哪个必去景点？",
-      "        Action: 补查缺失景点 或 开始查餐厅",
-      "  第3轮  Thought: 景点齐全，开始查餐厅和小红书",
-      "        Action: search_restaurants（早/午/晚餐）+ search_xhs_notes",
-      "  第N轮  Thought: 信息足够，综合编排行程",
-      "        Action: 进入阶段二",
-      "",
-      "## 阶段二：输出前自检",
-      "",
-      "输出 JSON 前逐项检查，不满足则继续收集信息：",
-      "",
-      "- [ ] 必去景点逐一检查：" + mustVisit + " 全部覆盖？",
-      "- [ ] 总费用是否 ≤ ¥" + budgetStr + "？",
-      "- [ ] 首日/末日是否按抵达/离开时间处理？",
-      "- [ ] 每天 2-3 个景点 + 3 餐 + transit 衔接完整？",
-      "- [ ] transit 夹在相邻活动之间（首活动从酒店出发，末活动返回酒店）？",
-      "- [ ] 大雨/恶劣天气的活动是否已改为室内？",
-      "",
-      "自检通过后，输出 Itinerary 类型的纯 JSON，不要有其他文字。",
-      "",
-      "## 降级说明",
-      "- 天气查询失败：继续规划，在 warnings 中注明\"天气数据不可用\"",
-      "- 景点搜索失败：用内置知识补全，在 description 中标注\"建议出发前确认\"",
-      "- 餐厅搜索失败：推荐当地特色菜系中的经典品类，标注\"建议到地后再选具体餐厅\"",
-      "- 其他工具失败：不影响主流程，在 warnings 中记录",
-      "",
-    ].join("\n");
-
-    return systemLayer + "\n" + contextLayer + "\n" + taskLayer;
-  }
-
-  private formatTransport(pref: UserPreferences): string {
-    const parts: string[] = [];
-    for (const [label, t] of [["去程", pref.selectedOutbound], ["返程", pref.selectedReturn]] as const) {
-      if (!t) continue;
-      if ("trainNo" in t) {
-        const tr = t as Train;
-        parts.push(label + "：" + tr.trainNo + " " + tr.departureCity + "->" + tr.arrivalCity + " " + tr.departureTime + "-" + tr.arrivalTime + " ¥" + tr.price + "/人");
-      } else {
-        const fl = t as Flight;
-        parts.push(label + "：" + fl.flightNo + " " + fl.departureCity + "->" + fl.arrivalCity + " " + fl.departureTime + "-" + fl.arrivalTime + " ¥" + fl.price + "/人");
-      }
-    }
-    return parts.length ? "\n## 交通\n" + parts.join("\n") : "";
-  }
-
-  private formatHotel(pref: UserPreferences): string {
-    if (!pref.selectedHotel) return "";
-    const h = pref.selectedHotel as Hotel;
-    return "\n## 酒店\n" + h.name + " " + h.starRating + "星 ¥" + h.pricePerNight + "/晚";
-  }
-
   private async callLlmWithTools(
     messages: Array<{ role: string; content: string | unknown[] }>,
     tools: unknown[],
@@ -497,30 +301,6 @@ export class LLMPlanAgent extends BaseAgent {
 
   private async executeTool(name: string, input: Record<string, unknown>, city: string, pref: UserPreferences) {
     try {
-      if (name === "search_attractions") {
-        const results = await this.dataSource.searchAttractions({
-          city: String(input.city ?? city),
-          query: input.query ? String(input.query) : undefined,
-          interests: Array.isArray(input.interests) ? input.interests.map(String) : undefined,
-          maxResults: Number(input.max_results) || 10,
-        });
-        const summary = results.slice(0, 12).map((a) =>
-          a.name + " [" + a.category + "] ¥" + a.price + (a.geoLocation ? " (" + a.geoLocation.lat.toFixed(3) + "," + a.geoLocation.lon.toFixed(3) + ")" : "")
-        ).join("\n");
-        return { success: true, count: results.length, attractions: summary };
-      }
-
-      if (name === "search_restaurants") {
-        const results = await this.dataSource.searchRestaurants({
-          city: String(input.city ?? city),
-          mealType: String(input.meal_type ?? "lunch") as "breakfast" | "lunch" | "dinner",
-          diningPreference: (String(input.preference ?? "local_specialties")) as any,
-          maxResults: Number(input.max_results) || 8,
-        });
-        const summary = results.slice(0, 8).map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
-        return { success: true, count: results.length, restaurants: summary };
-      }
-
       if (name === "search_weather") {
         try {
           const weatherSource = new AmapWeatherSource();
@@ -543,6 +323,30 @@ export class LLMPlanAgent extends BaseAgent {
         } catch {
           return { success: true, weather: "天气查询失败" };
         }
+      }
+
+      if (name === "search_attractions") {
+        const results = await this.dataSource.searchAttractions({
+          city: String(input.city ?? city),
+          query: input.query ? String(input.query) : undefined,
+          interests: Array.isArray(input.interests) ? input.interests.map(String) : undefined,
+          maxResults: Number(input.max_results) || 10,
+        });
+        const summary = results.slice(0, 12).map((a) =>
+          a.name + " [" + a.category + "] ¥" + a.price + (a.geoLocation ? " (" + a.geoLocation.lat.toFixed(3) + "," + a.geoLocation.lon.toFixed(3) + ")" : "")
+        ).join("\n");
+        return { success: true, count: results.length, attractions: summary };
+      }
+
+      if (name === "search_restaurants") {
+        const results = await this.dataSource.searchRestaurants({
+          city: String(input.city ?? city),
+          mealType: String(input.meal_type ?? "lunch") as "breakfast" | "lunch" | "dinner",
+          diningPreference: (String(input.preference ?? "local_specialties")) as any,
+          maxResults: Number(input.max_results) || 8,
+        });
+        const summary = results.slice(0, 8).map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
+        return { success: true, count: results.length, restaurants: summary };
       }
 
       if (name === "search_xhs_notes") {
