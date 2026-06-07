@@ -46,6 +46,16 @@ src/
 │   ├── booking-source.ts      # Booking.com 酒店 API
 │   ├── amap-source.ts         # 高德 POI 搜索
 │   └── web-search-source.ts   # Web Search 通用降级
+├── rag/                       # RAG 旅行攻略检索
+│   ├── types.ts               # RagDocument / RagSearchParams / RagSearchResult
+│   ├── embedder.ts            # Embedding API 调用（智谱 embedding-3, LRU 缓存）
+│   ├── vector-store.ts        # IVectorStore 接口 + MemoryVectorStore（文件持久化）
+│   ├── chroma-store.ts        # ChromaDB 实现（备选，需 server 运行）
+│   ├── corpus-loader.ts       # 文档分块（三级递进：标题→段落→滑窗）
+│   ├── pdf-loader.ts          # PDF 文本提取（pdf-parse）
+│   ├── rag-source.ts          # RagSource 统一入口（混合搜索：向量→关键词兜底）
+│   ├── ingest.ts              # 离线入库脚本
+│   └── eval.ts                # 评估脚本（Hit Rate / MRR / Recall / 延迟）
 ├── config/
 │   └── settings.ts            # 环境变量配置（frozen object）
 ├── cli/
@@ -181,6 +191,74 @@ UserPreferences
          ▼
     TravelPlanState (完整行程)
 ```
+
+## RAG 旅行攻略检索
+
+### 数据流
+
+```
+PDF 文件（129 个，全国 15 地区）
+  │  pdf-loader.ts（pdf-parse 提取文本）
+  ▼
+纯文本攻略
+  │  corpus-loader.ts chunkDocument()
+  │  三级分块：## 标题 → \n\n 段落 → 滑窗
+  │  参数：maxChars=500, overlap=80, minChars=100
+  ▼
+9,432 个文档块
+  │  embedder.ts（智谱 embedding-3, 2048 维）
+  ▼
+实数向量
+  │  MemoryVectorStore（or ChromaDB 备选）
+  ▼
+data/vectors/travel_guides.json（11MB 持久化）
+```
+
+### 搜索链路
+
+```
+Agent 调用 search_travel_guides(city, query)
+  │
+  ▼
+RagSource.search()
+  │  1. Embedding API → query 向量（2048 维）
+  │  2. MemoryVectorStore 余弦相似度搜索
+  │  3. score ≥ 0.3 → 返回向量结果
+  │  4. score < 0.3 → 关键词兜底
+  │     （单字 + 双字切分，按词频归一化计分）
+  ▼
+RagSource.formatForLlm() → 格式化文本注入 LLM 上下文
+```
+
+### LLMPlanAgent 集成
+
+- **工具名**: `search_travel_guides`
+- **位置**: LLMPlanAgent 第 5 个 ReAct 工具（search_weather → search_attractions → search_travel_guides → search_restaurants → search_xhs_notes）
+- **区别**: search_attractions 返回实时 POI 列表，search_travel_guides 返回深度攻略文本
+
+### 评估体系
+
+```
+eval.ts — 19 条测试查询覆盖 9 城市
+  │  指标：Hit Rate / MRR / Recall@10 / 延迟（P50/P95）
+  │
+  ▼
+data/eval/baseline.jsonl（历史记录）
+data/eval/RAG系统优化日志.md（优化实验文档）
+```
+
+**当前基线**: Hit Rate 71.8% | MRR 0.4868 | P95 延迟 206ms
+
+### 配置
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `RAG_ENABLED` | `true` | 开关 |
+| `RAG_EMBEDDING_BASE_URL` | `LLM_BASE_URL` | Embedding API 地址 |
+| `RAG_EMBEDDING_API_KEY` | `LLM_API_KEY` | Embedding API 密钥 |
+| `RAG_EMBEDDING_MODEL` | `text-embedding-3-small` | 嵌入模型名 |
+| `RAG_CHROMA_URL` | `""` | ChromaDB 地址（空=用 MemoryVectorStore）|
+| `RAG_PDF_DIR` | `""` | PDF 语料目录 |
 
 ## Agent 实现细节
 
