@@ -41,16 +41,56 @@ export class RagSource {
 
   async search(params: RagSearchParams): Promise<RagSearchResult[]> {
     await this.ensureInit();
-    if (!settings.RAG_ENABLED) return [];
+    if (!settings.RAG_ENABLED || !this.store) return [];
 
     const queryVector = await this.embedder.embed(params.query);
-    if (queryVector.length === 0) return [];
+    const hasVector = queryVector.length > 0;
 
-    const topK = (params.maxResults ?? 5) * 2;
-    const results = await this.store.search(queryVector, topK, {
-      city: params.city,
-      category: params.category && params.category !== "all" ? params.category : undefined,
-    });
+    const topK = (params.maxResults ?? 10) * 2;
+    let results: RagSearchResult[] = [];
+
+    if (hasVector) {
+      results = await this.store.search(queryVector, topK, {
+        city: params.city,
+        category: params.category && params.category !== "all" ? params.category : undefined,
+      });
+    }
+
+    // Keyword fallback: character-level token matching for Chinese
+    if (!hasVector || results.every((r) => r.score < SIMILARITY_THRESHOLD)) {
+      const store = this.store as any;
+      const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries;
+      if (entries?.length) {
+        const city = params.city;
+        const category = params.category && params.category !== "all" ? params.category : undefined;
+        // Tokenize: individual chars + bigrams + whole words
+        const raw = params.query.toLowerCase();
+        const chars = raw.replace(/[\s,，。、！？:：;；\-—()（）""''「」【】]+/g, "").split("");
+        const bigrams: string[] = [];
+        for (let i = 0; i < chars.length - 1; i++) bigrams.push(chars[i] + chars[i + 1]);
+        const tokens = [...new Set([...chars, ...bigrams])].filter((t) => t.length > 0);
+
+        return entries
+          .filter((e) => {
+            if (city && e.doc.metadata.city !== city) return false;
+            if (category && e.doc.metadata.category !== category) return false;
+            return true;
+          })
+          .map((e) => {
+            const content = e.doc.content.toLowerCase();
+            const title = e.doc.metadata.title.toLowerCase();
+            let score = 0;
+            for (const t of tokens) {
+              if (content.includes(t)) score += 1;
+              if (title.includes(t)) score += 2;
+            }
+            return { document: e.doc, score: tokens.length > 0 ? score / tokens.length : 0 };
+          })
+          .filter((r) => r.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, params.maxResults ?? 5);
+      }
+    }
 
     const scored = results
       .filter((r) => r.score >= SIMILARITY_THRESHOLD)
@@ -65,7 +105,15 @@ export class RagSource {
   }
 
   async formatForLlm(params: RagSearchParams): Promise<string> {
+    const start = Date.now();
     const results = await this.search(params);
+    const latency = Date.now() - start;
+
+    this.log?.info({
+      city: params.city, query: params.query?.slice(0, 60),
+      hits: results.length, topScore: results[0]?.score ?? 0, latency,
+    }, "rag: search");
+
     if (results.length === 0) return "";
 
     const lines = results.map((r) => {

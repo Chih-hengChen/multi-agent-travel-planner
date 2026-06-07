@@ -1,0 +1,4 @@
+{"date":"2026-06-07 08:41:40","hitRate":0,"mrr":0,"recall":0,"avgLatency":48,"p50":29,"p95":190,"config":{"chunkSize":500,"overlap":80,"minChars":100,"threshold":0.3,"topK":5}}
+{"date":"2026-06-07 08:45:58","hitRate":0,"mrr":0,"recall":0,"avgLatency":57,"p50":33,"p95":178,"config":{"chunkSize":500,"overlap":80,"minChars":100,"threshold":0.3,"topK":5}}
+{"date":"2026-06-07 08:50:18","hitRate":0,"mrr":0,"recall":0,"avgLatency":53,"p50":34,"p95":200,"config":{"chunkSize":500,"overlap":80,"minChars":100,"threshold":0.3,"topK":5}}
+{"date":"2026-06-07 08:51:31","hitRate":0.7179,"mrr":0.4868,"recall":0.7179,"avgLatency":51,"p50":33,"p95":206,"config":{"chunkSize":500,"overlap":80,"minChars":100,"topK":5}}
