@@ -28,4 +28,6 @@ export const settings = Object.freeze({
   FIRECRAWL_ENABLED: process.env.FIRECRAWL_ENABLED !== "false",
   XHS_SERVICE_URL: process.env.XHS_SERVICE_URL ?? "http://127.0.0.1:3220",
   TRAIN_12306_ENABLED: process.env.TRAIN_12306_ENABLED !== "false",
+  RAG_ENABLED: process.env.RAG_ENABLED !== "false",
+  RAG_EMBEDDING_MODEL: process.env.RAG_EMBEDDING_MODEL ?? "text-embedding-3-small",
 });

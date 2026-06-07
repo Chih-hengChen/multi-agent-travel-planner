@@ -7,6 +7,7 @@ import { sessionLogger } from "../logging/session-logger.js";
 import { getSessionId } from "../logging/session-context.js";
 import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
+import { RagSource } from "../rag/rag-source.js";
 import { buildSystemPrompt, PROMPT_VERSION } from "./llm-plan-prompt.js";
 
 export class LLMPlanAgent extends BaseAgent {
@@ -234,7 +235,19 @@ export class LLMPlanAgent extends BaseAgent {
           required: ["city"],
         },
       },
+      {
+        name: "search_travel_guides",
+        description: "搜索全国旅行攻略语料库。可查询指定城市的景点攻略、美食推荐、行程路线、交通贴士等。适合获取深度、结构化的旅行知识。",
+        input_schema: { type: "object", properties: { city: { type: "string", description: "目标城市" }, query: { type: "string", description: "自然语言查询" }, category: { type: "string", enum: ["attraction", "food", "itinerary", "tips", "all"] }, max_results: { type: "number" } }, required: ["city", "query"] },
+      },
     ];
+  }
+
+  private ragSource?: RagSource;
+
+  private async getRagSource(): Promise<RagSource> {
+    if (!this.ragSource) { this.ragSource = new RagSource(this.log); }
+    return this.ragSource;
   }
 
   private async callLlmWithTools(
@@ -348,6 +361,24 @@ export class LLMPlanAgent extends BaseAgent {
         });
         const summary = results.slice(0, 8).map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
         return { success: true, count: results.length, restaurants: summary };
+      }
+
+      if (name === "search_travel_guides") {
+        try {
+          const rag = await this.getRagSource();
+          const text = await rag.formatForLlm({
+            city: String(input.city ?? city),
+            query: String(input.query ?? ""),
+            category: String(input.category ?? "all"),
+            maxResults: Number(input.max_results) || 5,
+          });
+          if (!text) return { success: true, guides: "攻略库中未找到相关信息。" };
+          return { success: true, count: text.split("\n\n").length - 1, guides: text };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log.warn({ err: msg }, "RAG search failed");
+          return { success: true, guides: "旅行攻略库暂不可用。" };
+        }
       }
 
       if (name === "search_xhs_notes") {
