@@ -90,6 +90,15 @@
 - 配置：`FIRECRAWL_API_KEY` 环境变量，`FIRECRAWL_ENABLED` 开关
 - 无新依赖，改动集中在 `WebSearchSource` 内部
 
+### Pipeline 超时重试+恢复+降级回路 (2026-06-07)
+
+- `df7ad2a` fix: add retry, recovery and degradation to pipeline execution
+  - ParallelExecutor 改为 per-agent 顺序执行 + 独立超时（默认 120s）
+  - 超时后自动重试一次（1.5x 超时），仍失败则降级（degraded）
+  - BudgetLoopController 检测 AgentRunResult，记录 recovery_action 事件
+  - Pipeline 中 LLMPlanAgent 降级时自动回退到 mock ActivityAgent
+  - 新增日志事件：agent_retry / agent_degraded / recovery_action / pipeline_fallback
+
 ## 下一步待办
 
 - 端到端测试：启动服务验证去程高铁返程飞机场景
@@ -101,14 +110,14 @@
 
 ### Phase 1~5 演进架构实现 (2026-06-07)
 
-- `(未提交)` feat: 新增 IntentRouter 模块 — 意图分类（simple_answer/slot_filling/deterministic_workflow/multi_agent_planning/human_confirmation）+ RouteDecision 输出机制
-- `(未提交)` feat: 升级 Business State Machine — 新增 ERROR_RECOVERABLE/ERROR_TERMINAL 状态，StateSpec 声明 requiredFields/exitCriteria/recoveryPolicy/humanConfirmation
-- `(未提交)` feat: 新增 StepExecutor — 统一 AgentStep 生命周期 pending→running→validating→succeeded/failed，超时+重试+错误分类
-- `(未提交)` feat: 新增 Tool Policy — ToolMetadata 扩展 riskLevel/costLevel/requiresNetwork/outputValidator
-- `(未提交)` feat: 新增 ResultValidator — 交通/酒店/行程输出校验器，支持注册自定义校验规则
-- `(未提交)` feat: 新增 TraceRecorder — 结构化 TraceEvent，8 种 actor（user/router/llm/agent/tool/source/validator/recovery），完整记录执行链路
-- `(未提交)` feat: 新增 ConversationSummary — 三层上下文（结构化状态/短期对话/压缩摘要），历史超过 10 轮后自动摘要
-- `(未提交)` feat: IntentRouter 集成到 TurnHandler — 每次用户输入先路由再决策，记录 route_decision 事件
+- `574f22f` feat: implement phases 1-5 of Agent Runtime evolution spec
+  - 新增 IntentRouter 模块（意图分类 + RouteDecision）
+  - 升级 State Machine（ERROR_RECOVERABLE/ERROR_TERMINAL + StateSpec）
+  - 新增 StepExecutor（统一 AgentStep 生命周期）
+  - 新增 Tool Policy + ResultValidator（风险等级 + 输出校验）
+  - 新增 TraceRecorder（结构化 TraceEvent，8 种 actor）
+  - 新增 ConversationSummary（三层上下文 + 自动摘要）
+  - IntentRouter 集成到 TurnHandler
 
 ## 后续待办
 
@@ -117,3 +126,25 @@
 - 将 StepExecutor 集成到 TurnHandler 的搜索/规划步骤中
 - 将 TraceRecorder 集成到 ConversationOrchestrator 的状态迁移中
 - 为 IntentRouter 增加单元测试
+
+### 酒店位置智能排序 + LLM Prompt 增强 (2026-06-07)
+
+- `b348009` fix: hotel location awareness and enhanced LLM system prompt
+  - BookingSource 计算 Haversine 距离，按距市中心距离+价格排序
+  - 前端酒店卡片显示"距市中心Xkm"
+  - LLMPlanAgent system prompt 重写为结构化多段提示（景点覆盖、酒店合理性、日程节奏、餐饮限制）
+
+### RAG 旅行攻略服务 (2026-06-07)
+
+- `586f95b` feat: add RAG travel guides service with search_travel_guides tool
+  - 新增 src/rag/ 模块：types/Embedder/MemoryVectorStore/corpus-loader/RagSource
+  - LLMPlanAgent 第5个 ReAct 工具：search_travel_guides
+  - 种子语料：14条攻略覆盖北京/成都/广州/西安
+  - 配置：RAG_ENABLED / RAG_EMBEDDING_MODEL
+
+### Plan UI 富行程展示 + LLMPlanAgent 可观测日志 (2026-06-07)
+
+- `d5c739f` feat: enhance plan UI to test-suite format and add LLMPlanAgent trace logging
+  - renderPlanCard 重写为富行程样式：标题/日期/总花费/交通/酒店/逐日行程
+  - PlanSummary 新增 departureCity/hotelAlternatives 等字段
+  - LLMPlanAgent.callLlmWithTools 新增完整 llm_request/llm_response 日志
