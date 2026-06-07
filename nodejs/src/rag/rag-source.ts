@@ -1,6 +1,7 @@
 import type { RagSearchParams, RagSearchResult, RagSourceStats, RagDocument } from "./types.js";
 import { Embedder } from "./embedder.js";
 import { MemoryVectorStore, type IVectorStore } from "./vector-store.js";
+import { ChromaVectorStore } from "./chroma-store.js";
 import { loadSeedDirectory, convertBaikeToDocs, convertXhsToDocs } from "./corpus-loader.js";
 import { settings } from "../config/settings.js";
 import type { Logger } from "pino";
@@ -9,7 +10,7 @@ const SIMILARITY_THRESHOLD = 0.3;
 
 export class RagSource {
   private embedder = new Embedder();
-  private store: IVectorStore = new MemoryVectorStore();
+  private store: IVectorStore = settings.RAG_CHROMA_URL ? new ChromaVectorStore(settings.RAG_CHROMA_URL) : new MemoryVectorStore("travel_guides");
   private initialized = false;
   private log?: Logger;
 
@@ -18,17 +19,17 @@ export class RagSource {
   async ensureInit(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+    if (!settings.RAG_ENABLED) { this.log?.info("rag: disabled"); return; }
 
-    if (!settings.RAG_ENABLED) {
-      this.log?.info("rag: disabled by config");
-      return;
-    }
+    const count = await this.store.count();
+    this.log?.info({ storeType: settings.RAG_CHROMA_URL ? "chroma" : "memory", docs: count }, "rag: ready");
 
-    const seeds = loadSeedDirectory();
-    if (seeds.length > 0) {
-      this.log?.info({ count: seeds.length }, "rag: loading seed guides");
-      await this.addDocuments(seeds);
-      this.log?.info({ total: await this.store.count() }, "rag: seed loaded");
+    if (count === 0) {
+      const seeds = loadSeedDirectory();
+      if (seeds.length > 0) {
+        this.log?.info({ count: seeds.length }, "rag: loading seed JSONL");
+        await this.addDocuments(seeds);
+      }
     }
   }
 

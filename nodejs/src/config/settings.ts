@@ -29,5 +29,7 @@ export const settings = Object.freeze({
   XHS_SERVICE_URL: process.env.XHS_SERVICE_URL ?? "http://127.0.0.1:3220",
   TRAIN_12306_ENABLED: process.env.TRAIN_12306_ENABLED !== "false",
   RAG_ENABLED: process.env.RAG_ENABLED !== "false",
+  RAG_CHROMA_URL: process.env.RAG_CHROMA_URL ?? "http://localhost:8000",
   RAG_EMBEDDING_MODEL: process.env.RAG_EMBEDDING_MODEL ?? "text-embedding-3-small",
+  RAG_PDF_DIR: process.env.RAG_PDF_DIR ?? "",
 });

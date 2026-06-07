@@ -1,3 +1,5 @@
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type { RagDocument, RagSearchResult } from "./types.js";
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -19,13 +21,24 @@ export interface IVectorStore {
   clear(): Promise<void>;
 }
 
+const PERSIST_DIR = resolve(process.cwd(), "data/vectors");
+
 export class MemoryVectorStore implements IVectorStore {
   private entries: Array<{ doc: RagDocument; embedding: number[] }> = [];
+  private persistPath = "";
+
+  constructor(persistKey?: string) {
+    if (persistKey) {
+      this.persistPath = resolve(PERSIST_DIR, persistKey + ".json");
+      this.loadFromDisk();
+    }
+  }
 
   async add(docs: RagDocument[], embeddings: number[][]): Promise<void> {
     for (let i = 0; i < docs.length; i++) {
       this.entries.push({ doc: docs[i], embedding: embeddings[i] ?? [] });
     }
+    this.saveToDisk();
   }
 
   async search(queryVector: number[], topK: number, filter?: { city?: string; category?: string }): Promise<RagSearchResult[]> {
@@ -42,5 +55,26 @@ export class MemoryVectorStore implements IVectorStore {
   }
 
   async count(): Promise<number> { return this.entries.length; }
-  async clear(): Promise<void> { this.entries = []; }
+
+  async clear(): Promise<void> {
+    this.entries = [];
+    this.saveToDisk();
+  }
+
+  private saveToDisk(): void {
+    if (!this.persistPath) return;
+    try {
+      if (!existsSync(PERSIST_DIR)) mkdirSync(PERSIST_DIR, { recursive: true });
+      const data = this.entries.map((e) => ({ doc: e.doc, embedding: Array.from(e.embedding) }));
+      writeFileSync(this.persistPath, JSON.stringify(data));
+    } catch { /* persistence is best-effort */ }
+  }
+
+  private loadFromDisk(): void {
+    if (!this.persistPath || !existsSync(this.persistPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(this.persistPath, "utf-8")) as Array<{ doc: RagDocument; embedding: number[] }>;
+      this.entries = raw;
+    } catch { /* ignore corrupt cache */ }
+  }
 }
