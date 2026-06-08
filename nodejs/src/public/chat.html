@@ -375,6 +375,7 @@ function renderDataSources(plan) {
       }
       html += '</div></div>';
     }
+    }
 	  if (plan.transportMode !== 'train') {
     const allFlights = [...(plan.outboundFlights || []), ...(plan.returnFlights || [])];
     if (allFlights.length > 0) {
@@ -873,7 +874,6 @@ formEl.addEventListener('submit', e => {
 
 ensureSession();
 inputEl.focus();
-}
 </script>
 </body>
 </html>
