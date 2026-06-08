@@ -105,16 +105,12 @@ export class TurnHandler {
       }
     }
 
-    // If user is in a selection state, treat message as natural language selection guidance
+    // ReAct recovery: use LLM to interpret user intent in selection state
     if (
       ctx.state === ConversationState.SELECTING_TRANSPORT ||
       ctx.state === ConversationState.SELECTING_HOTEL
     ) {
-      const reply =
-        ctx.state === ConversationState.SELECTING_TRANSPORT
-          ? "请从上方交通选项中选择一个，或点击「重新搜索」。"
-          : "请从上方酒店选项中选择一个，或点击「更换交通」重新选择。";
-      return { newState: ctx.state, replyText: reply };
+      return this.handleSelectingState(ctx, userMessage);
     }
 
     const knownFields = this.getKnownFields(ctx);
@@ -235,6 +231,163 @@ export class TurnHandler {
       newState: ctx.state,
       replyText: "当前状态无法处理该选择操作。",
     };
+  }
+
+  private async handleSelectingState(ctx: ConversationContext, userMessage: string): Promise<TurnResult> {
+    const isHotel = ctx.state === ConversationState.SELECTING_HOTEL;
+    let optionsStr: string;
+    let optionCount = 0;
+    if (isHotel) {
+      const hotels = ctx.hotelOptions || [];
+      optionCount = hotels.length;
+      optionsStr = optionCount > 0
+        ? hotels.map((h, i) => `${i + 1}. ${h.name} - ¥${h.pricePerNight}/晚 - 评分${h.userRating}${h.distanceToCenterKm ? ` - 距市中心${h.distanceToCenterKm}km` : ""}`).join("\n")
+        : "(当前没有可用酒店)";
+    } else {
+      const transport = ctx.transportSearchResult;
+      const allOpts = [...(transport?.outbound || []), ...(transport?.return || [])];
+      optionCount = allOpts.length;
+      optionsStr = optionCount > 0
+        ? allOpts.map((t, i) => `${i + 1}. ${t.mode === "train" ? t.trainNo : t.flightNo} ${t.departStation}→${t.arriveStation} ${t.departTime}-${t.arriveTime} ¥${t.price}`).join("\n")
+        : "(当前没有可用交通选项)";
+    }
+
+    try {
+      const response = await this.callSelectionLlm(userMessage, isHotel, optionsStr, optionCount);
+
+      // Try to extract tool call (function_call format)
+      const choice = (response as any)?.choices?.[0]?.message;
+      if (choice?.tool_calls?.length > 0) {
+        const tc = choice.tool_calls[0];
+        const fnName = tc.function?.name;
+        const fnArgs = JSON.parse(tc.function?.arguments || "{}");
+
+        if (fnName === "select_option" && typeof fnArgs.index === "number") {
+          return this.executeOptionSelect(ctx, fnArgs.index, isHotel);
+        }
+        if (fnName === "rescan") {
+          if (isHotel) return this.searchHotels(ctx);
+          return this.searchTransport(ctx);
+        }
+        if (fnName === "skip_selection") {
+          if (isHotel) return this.runPipeline(ctx);
+          ctx.state = ConversationState.SELECTING_TRANSPORT;
+          return { newState: ctx.state, replyText: "已跳过交通选择，是否继续规划？请选择出发城市和目的地。" };
+        }
+      }
+
+      // LLM chose text response — return it as assistant reply
+      const text = choice?.content || (response as any)?.content?.[0]?.text || "";
+      if (text.trim()) {
+        return { newState: ctx.state, replyText: text.trim() };
+      }
+    } catch (err) {
+      this.log.warn({ err, state: ctx.state }, "ReAct recovery LLM call failed, using fallback");
+    }
+
+    // Fallback: if LLM call fails, return guidance
+    const fallback = isHotel
+      ? "请从上方酒店选项中选择一个。如果列表为空，我可以跳过酒店选择直接规划行程，或者您也可以修改条件重新搜索。"
+      : "请从上方交通选项中选择一个。如果没有合适的选项，我可以重新搜索。";
+    return { newState: ctx.state, replyText: fallback };
+  }
+
+  private async callSelectionLlm(userMessage: string, isHotel: boolean, optionsStr: string, optionCount: number): Promise<unknown> {
+    const stateLabel = isHotel ? "SELECTING_HOTEL" : "SELECTING_TRANSPORT";
+    const itemLabel = isHotel ? "酒店" : "交通";
+    const systemPrompt = `你是一个旅行规划助手的对话恢复模块。用户当前处于 ${stateLabel} 状态，需要选择一个${itemLabel}。
+
+当前可选${itemLabel}：
+${optionsStr}
+
+你可以调用以下函数来帮助用户：
+1. select_option(index, type) — 当用户明确选择了某个选项时调用，index从1开始
+2. rescan() — 当用户想重新搜索或更换条件时调用
+3. skip_selection() — 当用户想跳过选择时调用（仅${isHotel ? "酒店" : "交通"}选择）
+
+如果不确定用户意图，请直接回复用户解释当前状态并引导操作。回复要简洁自然。`;
+
+    const tools = [{
+      type: "function",
+      function: {
+        name: "select_option",
+        description: `用户选择了某个${itemLabel}选项`,
+        parameters: {
+          type: "object",
+          properties: {
+            index: { type: "number", description: "选项序号，从1开始" },
+            type: { type: "string", enum: ["transport", "hotel"] },
+          },
+          required: ["index", "type"],
+        },
+      },
+    }, {
+      type: "function",
+      function: {
+        name: "rescan",
+        description: "用户想重新搜索或更换搜索条件",
+        parameters: { type: "object", properties: { reason: { type: "string" } } },
+      },
+    }, {
+      type: "function",
+      function: {
+        name: "skip_selection",
+        description: `用户想跳过${itemLabel}选择`,
+        parameters: { type: "object", properties: {} },
+      },
+    }];
+
+    if (settings.LLM_PROVIDER === "anthropic") {
+      const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": settings.LLM_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: settings.LLM_LIGHT_MODEL,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }],
+          tools: tools.map((t) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters })),
+          temperature: settings.LLM_TEMPERATURE_STRUCTURED,
+          max_tokens: 1024,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      return resp.json();
+    }
+
+    const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${settings.LLM_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: settings.LLM_LIGHT_MODEL,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
+        tools,
+        temperature: settings.LLM_TEMPERATURE_STRUCTURED,
+        max_tokens: 1024,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return resp.json();
+  }
+
+  private async executeOptionSelect(ctx: ConversationContext, index: number, isHotel: boolean): Promise<TurnResult> {
+    if (isHotel) {
+      const options = ctx.hotelOptions || [];
+      const hotel = options[index];
+      if (!hotel) return { newState: ctx.state, replyText: `没有找到序号 ${index} 对应的选项，请重新选择。` };
+      ctx.selectedHotel = hotel;
+      if (canTransition(ctx.state, ConversationState.SEARCHING)) {
+        return this.runPipeline(ctx);
+      }
+      return { newState: ctx.state, replyText: `已选择 ${hotel.name}，正在为您规划行程...` };
+    }
+
+    // Transport selection via ReAct — reuse handleSelect's logic
+    const result = await this.handleSelect(ctx, {
+      type: "transport",
+      outboundId: String(index),
+      returnId: String(index),
+    });
+    return result;
   }
 
   private async searchTransport(ctx: ConversationContext): Promise<TurnResult> {
