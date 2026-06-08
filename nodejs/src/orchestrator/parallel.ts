@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { TravelPlanState } from "../types/index.js";
+import type { TravelPlanState, ProgressCallback } from "../types/index.js";
 import type { BaseAgent } from "../agents/base-agent.js";
 
 export interface AgentRunResult {
@@ -24,7 +24,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export class ParallelExecutor {
+export class PipelineExecutor {
   constructor(
     private readonly agents: BaseAgent[],
     private readonly log: Logger,
@@ -32,14 +32,20 @@ export class ParallelExecutor {
     private readonly defaultMaxRetries = 1,
   ) {}
 
-  async runSequential(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+  async runSequential(state: TravelPlanState, onProgress?: ProgressCallback): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
     this.log.info({ agents: this.agents.length }, "顺序执行开始");
 
     const results: AgentRunResult[] = [];
 
     for (const agent of this.agents) {
+      if (onProgress) {
+        onProgress({ phase: agent.name, agentName: agent.name, status: "running", progressPercent: 0, estimatedSecondsLeft: Math.round(this.defaultTimeoutMs / 1000) });
+      }
       const result = await this.runSingle(agent, state);
       results.push(result);
+      if (onProgress) {
+        onProgress({ phase: agent.name, agentName: agent.name, status: result.degraded ? "degraded" : result.success ? "completed" : "failed", progressPercent: 0, estimatedSecondsLeft: 0 });
+      }
       if (result.error) {
         state.errorMessages.push(`${agent.name}: ${result.error}`);
       }
@@ -54,8 +60,15 @@ export class ParallelExecutor {
     return { state, results };
   }
 
-  async runParallel(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+  async runParallel(state: TravelPlanState, onProgress?: ProgressCallback): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
     this.log.info({ agents: this.agents.length }, "真正并行执行");
+
+    // Emit running for all before start
+    for (const agent of this.agents) {
+      if (onProgress) {
+        onProgress({ phase: agent.name, agentName: agent.name, status: "running", progressPercent: 0, estimatedSecondsLeft: Math.round(this.defaultTimeoutMs / 1000) });
+      }
+    }
 
     const settled = await Promise.allSettled(
       this.agents.map((agent) => this.runSingle(agent, state)),
@@ -69,6 +82,9 @@ export class ParallelExecutor {
         if (s.value.error) {
           state.errorMessages.push(`${this.agents[i].name}: ${s.value.error}`);
         }
+        if (onProgress) {
+          onProgress({ phase: this.agents[i].name, agentName: this.agents[i].name, status: s.value.degraded ? "degraded" : "completed", progressPercent: 0, estimatedSecondsLeft: 0 });
+        }
       } else {
         const err = s.reason instanceof Error ? s.reason.message : String(s.reason);
         results.push({
@@ -80,6 +96,9 @@ export class ParallelExecutor {
           error: err,
         });
         state.errorMessages.push(`${this.agents[i].name}: ${err}`);
+        if (onProgress) {
+          onProgress({ phase: this.agents[i].name, agentName: this.agents[i].name, status: "failed", progressPercent: 0, estimatedSecondsLeft: 0, });
+        }
       }
     }
 
@@ -93,8 +112,8 @@ export class ParallelExecutor {
   }
 
   /** @deprecated Use runSequential or runParallel instead */
-  async run(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
-    return this.runSequential(state);
+  async run(state: TravelPlanState, onProgress?: ProgressCallback): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+    return this.runSequential(state, onProgress);
   }
 
   private async runSingle(agent: BaseAgent, state: TravelPlanState): Promise<AgentRunResult> {

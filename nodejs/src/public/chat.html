@@ -761,6 +761,7 @@ async function streamConversation(text, botBubble) {
   let fullText = '';
   let planData = null;
   let extraHtml = '';
+  let progressHtml = '';
 
   const resp = await fetch(`/api/chat/${sessionId}`, {
     method: 'POST',
@@ -814,7 +815,23 @@ async function streamConversation(text, botBubble) {
             extraHtml = renderHotelCard(data);
             botBubble.innerHTML = marked.parse(fullText) + extraHtml;
             scrollBottom();
+          } else if (currentEvent === 'progress') {
+            const pct = data.progressPercent || 0;
+            const eta = data.estimatedSecondsLeft ? '~' + data.estimatedSecondsLeft + 's' : '';
+            const phase = data.phase || '处理中';
+            progressHtml = '<div class="mt-2 p-2 bg-gray-50 rounded-lg border">'
+              + '<div class="flex justify-between text-xs text-gray-500 mb-1">'
+              + '<span>' + esc(phase) + '</span>'
+              + '<span>' + pct + '% ' + eta + '</span>'
+              + '</div>'
+              + '<div class="w-full bg-gray-200 rounded-full h-1.5">'
+              + '<div class="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style="width:' + pct + '%"></div>'
+              + '</div>'
+              + '</div>';
+            botBubble.innerHTML = marked.parse(fullText) + progressHtml + extraHtml;
+            scrollBottom();
           } else if (currentEvent === 'tool_result') {
+            progressHtml = '';
             if (data.tool === 'plan_travel') planData = data.result;
           } else if (currentEvent === 'error') {
             fullText += `\n\n❌ 错误: ${data.error}`;
@@ -827,7 +844,8 @@ async function streamConversation(text, botBubble) {
   }
 
   const planCardHtml = planData ? renderPlanCard(planData) : '';
-  finalizeBotBubble(botBubble, fullText, extraHtml + planCardHtml);
+  const finalProgress = planData ? '' : progressHtml;
+  finalizeBotBubble(botBubble, fullText, finalProgress + extraHtml + planCardHtml);
   return { fullText, planData };
 }
 

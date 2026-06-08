@@ -1,5 +1,5 @@
 import pino, { type Logger } from "pino";
-import { TravelStyle, TravelPlanState, PlanningState, type UserPreferences, type Destination } from "../types/index.js";
+import { TravelStyle, TravelPlanState, PlanningState, type UserPreferences, type Destination, type ProgressCallback } from "../types/index.js";
 import { PreferenceAgent, FlightAgent, HotelAgent, ActivityAgent, LLMPlanAgent, BudgetAgent } from "../agents/index.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
@@ -13,7 +13,6 @@ import { BudgetLoopController } from "./budget-loop.js";
 import { sessionLogger } from "../logging/session-logger.js";
 import * as destinationPrompt from "../prompts/destination-detail.js";
 import { settings } from "../config/settings.js";
-import { logWithSession } from "../logging/session-context.js";
 
 class CompositeDataSource implements TravelDataSource {
   constructor(
@@ -103,8 +102,6 @@ async function enrichDestination(city: string, budget: number): Promise<Destinat
       highlights: Array.isArray(parsed.highlights) ? parsed.highlights.map(String) : [],
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logWithSession("destination_enrich_failed", { city, budget, error: msg });
     return {
       city,
       country: "",
@@ -115,6 +112,48 @@ async function enrichDestination(city: string, budget: number): Promise<Destinat
       costLevel: "medium",
       highlights: [],
     };
+  }
+}
+
+const AGENT_WEIGHTS: Record<string, number> = {
+  PreferenceAgent: 2,
+  enrichDestination: 3,
+  FlightAgent: 20,
+  HotelAgent: 20,
+  LLMPlanAgent: 40,
+  BudgetAgent: 5,
+};
+
+const ROUND_WEIGHT = 85; // Flight(20) + Hotel(20) + LLMPlan(40) + Budget(5)
+
+class ProgressTracker {
+  private completedWeight = 0;
+  private totalWeight: number;
+  private startTime: number;
+
+  constructor(maxRounds: number) {
+    this.totalWeight = 5 + ROUND_WEIGHT * maxRounds;
+    this.startTime = Date.now();
+  }
+
+  add(agentName: string): void {
+    this.completedWeight += AGENT_WEIGHTS[agentName] ?? 0;
+  }
+
+  adjustTotal(maxRounds: number): void {
+    this.totalWeight = 5 + ROUND_WEIGHT * maxRounds;
+  }
+
+  getPercent(): number {
+    return Math.min(100, Math.round((this.completedWeight / Math.max(this.totalWeight, 1)) * 100));
+  }
+
+  getEta(): number {
+    const elapsed = (Date.now() - this.startTime) / 1000;
+    const done = this.completedWeight;
+    const remaining = Math.max(0, this.totalWeight - done);
+    const speed = done / Math.max(elapsed, 1);
+    return Math.round(remaining / Math.max(speed, 0.1));
   }
 }
 
@@ -149,18 +188,35 @@ export class TravelPlanningPipeline {
     this.budgetLoop = new BudgetLoopController(this.flightHotelExecutor, this.planExecutor, budgetAgent, this.log);
   }
 
-  async run(preferences: UserPreferences): Promise<TravelPlanState> {
+  async run(preferences: UserPreferences, onProgress?: ProgressCallback): Promise<TravelPlanState> {
     const state = new TravelPlanState();
     state.preferences = preferences;
+    const tracker = new ProgressTracker(settings.BUDGET_MAX_RETRIES + 1);
 
     state.state = PlanningState.COLLECTING_PREFERENCES;
     let result = await this.prefAgent.run(state);
+    tracker.add("PreferenceAgent");
+    if (onProgress) {
+      onProgress({ phase: "准备规划", status: "completed", progressPercent: tracker.getPercent(), estimatedSecondsLeft: tracker.getEta() });
+    }
     if (result.state === PlanningState.FAILED) return result;
 
     result = await this.runDestinationEnrichment(result);
+    tracker.add("enrichDestination");
+    if (onProgress) {
+      onProgress({ phase: "目的地分析完成", status: "completed", progressPercent: tracker.getPercent(), estimatedSecondsLeft: tracker.getEta() });
+    }
     if (result.state === PlanningState.FAILED) return result;
 
-    result = await this.budgetLoop.run(result);
+    const wrappedProgress: ProgressCallback = (update) => {
+      if (update.status === "completed" || update.status === "degraded" || update.status === "failed") {
+        tracker.add(update.agentName ?? update.phase);
+      }
+      if (onProgress) {
+        onProgress({ ...update, progressPercent: tracker.getPercent(), estimatedSecondsLeft: tracker.getEta() });
+      }
+    };
+    result = await this.budgetLoop.run(result, wrappedProgress);
 
     if (this.isActivityMissing(result) && result.state !== PlanningState.FAILED) {
       this.log.warn("活动规划缺失，降级到 ActivityAgent (mock)。");

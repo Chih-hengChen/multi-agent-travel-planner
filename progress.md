@@ -166,3 +166,12 @@
 - `uncommitted` perf: VectorStore 启动预热
 - `uncommitted` config: 分层 Temperature + LLM_MAX_TOKENS_PLAN + SESSION_STORE_TYPE
 - `uncommitted` fix: FlightAgent.searchTrains 传递 maxPrice 预算约束
+
+### 进度感知规划系统 (2026-06-08)
+
+- `uncommitted` feat: Pipeline 执行期间通过 SSE 流式输出 progress 事件（阶段名、进度%、ETA）
+- `uncommitted` feat: 权重式进度计算（Flight=20, Hotel=20, LLMPlan=40, Budget=5），动态 ETA 推算
+- `uncommitted` feat: 前端聊天气泡内联进度条（阶段文字 + 进度条 + 剩余秒数），实时更新
+- `uncommitted` feat: 预算循环多轮迭代进度正确报告轮次信息
+- `uncommitted` types: 新增 ProgressUpdate 接口和 ProgressCallback 类型
+- 改动：types/index.ts, parallel.ts, budget-loop.ts, pipeline.ts, turn-handler.ts, conversation-orchestrator.ts, chat.html

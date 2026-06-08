@@ -22,7 +22,7 @@ import { AmapSource } from "../data-sources/amap-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { Train12306Source } from "../data-sources/train12306-source.js";
 import { settings } from "../config/settings.js";
-import type { PlanSummary, Flight, Train, Hotel } from "../types/index.js";
+import type { PlanSummary, Flight, Train, Hotel, ProgressCallback } from "../types/index.js";
 import { withSessionId } from "../logging/session-context.js";
 
 export interface TurnResult {
@@ -67,6 +67,7 @@ export class TurnHandler {
   async handleTurn(
     ctx: ConversationContext,
     userMessage: string,
+    onProgress?: ProgressCallback,
   ): Promise<TurnResult> {
     ctx.messageHistory.push({ role: "user", content: userMessage });
     ctx.turnCount++;
@@ -141,7 +142,7 @@ export class TurnHandler {
     }
 
     if (newState === ConversationState.SEARCHING) {
-      return this.runPipeline(ctx);
+      return this.runPipeline(ctx, onProgress);
     }
 
     ctx.state = newState;
@@ -394,7 +395,7 @@ export class TurnHandler {
     });
   }
 
-  private async runPipeline(ctx: ConversationContext): Promise<TurnResult> {
+  private async runPipeline(ctx: ConversationContext, onProgress?: ProgressCallback): Promise<TurnResult> {
     ctx.state = ConversationState.SEARCHING;
     ctx.updatedAt = Date.now();
 
@@ -403,7 +404,7 @@ export class TurnHandler {
     return withSessionId(ctx.sessionId, async () => {
     try {
       const prefs = toUserPreferences(ctx);
-      const state = await this.pipeline.run(prefs);
+      const state = await this.pipeline.run(prefs, onProgress);
       const planResult = buildPlanSummary(state);
 
       ctx.planSummary = planResult;

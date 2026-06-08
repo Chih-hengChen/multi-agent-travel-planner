@@ -42,7 +42,10 @@ export class ConversationOrchestrator {
       turnCount: ctx.turnCount + 1,
     });
 
-    const result: TurnResult = await this.turnHandler.handleTurn(ctx, userMessage);
+    const onProgress: import("../types/index.js").ProgressCallback = (update) => {
+      emit("progress", update);
+    };
+    const result: TurnResult = await this.turnHandler.handleTurn(ctx, userMessage, onProgress);
 
     if (result.newState !== ctx.state) {
       emit("state_change", { state: result.newState });

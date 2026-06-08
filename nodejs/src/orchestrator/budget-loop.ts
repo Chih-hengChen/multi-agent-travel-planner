@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import { PlanningState, type TravelPlanState } from "../types/index.js";
+import { PlanningState, type TravelPlanState, type ProgressCallback } from "../types/index.js";
 import type { BudgetAgent } from "../agents/budget-agent.js";
 import type { PipelineExecutor, AgentRunResult } from "./parallel.js";
 import { sessionLogger } from "../logging/session-logger.js";
@@ -18,7 +18,7 @@ export class BudgetLoopController {
     this.maxRetries = maxRetries ?? settings.BUDGET_MAX_RETRIES;
   }
 
-  async run(state: TravelPlanState): Promise<TravelPlanState> {
+  async run(state: TravelPlanState, onProgress?: ProgressCallback): Promise<TravelPlanState> {
     state.maxAdjustments = this.maxRetries;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -26,11 +26,16 @@ export class BudgetLoopController {
       this.log.info({ attempt, label }, "预算循环迭代");
 
       if (attempt === 0 || state.state === PlanningState.ADJUSTING) {
-        // Flight + Hotel 无数据依赖，真正并行；LLMPlan 依赖前两者结果，顺序执行
-        const { state: searchState, results: searchResults } = await this.flightHotelExecutor.runParallel(state);
+        if (onProgress) {
+          onProgress({ phase: "搜索交通和酒店", status: "running", progressPercent: 0, estimatedSecondsLeft: 120, round: attempt + 1, maxRounds: this.maxRetries + 1 });
+        }
+        const { state: searchState, results: searchResults } = await this.flightHotelExecutor.runParallel(state, onProgress);
         state = searchState;
 
-        const { state: planState, results: planResults } = await this.planExecutor.runSequential(state);
+        if (onProgress) {
+          onProgress({ phase: "生成行程计划", status: "running", progressPercent: 0, estimatedSecondsLeft: 60, round: attempt + 1, maxRounds: this.maxRetries + 1 });
+        }
+        const { state: planState, results: planResults } = await this.planExecutor.runSequential(state, onProgress);
         state = planState;
 
         const results = [...searchResults, ...planResults];

@@ -295,3 +295,15 @@ export interface TransitRouteResult {
   transfers: number;
   segments: TransitSegment[];
 }
+
+export interface ProgressUpdate {
+  phase: string;
+  agentName?: string;
+  status: "running" | "completed" | "failed" | "degraded";
+  progressPercent: number;
+  estimatedSecondsLeft: number;
+  round?: number;
+  maxRounds?: number;
+}
+
+export type ProgressCallback = (update: ProgressUpdate) => void;
