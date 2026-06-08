@@ -201,6 +201,13 @@ export class TravelPlanState {
   }
 }
 
+export interface PlanReference {
+  title: string;
+  url?: string;
+  source: string; // "baike" | "xhs" | "web" | "flight" | "hotel" | "train"
+  description?: string;
+}
+
 export const PlanRequestSchema = z.object({
   budget: z.number().positive().default(10000),
   departure_city: z.string().default("北京"),
@@ -262,6 +269,7 @@ export interface PlanSummary {
     note: string;
   }>;
   dayPlans: DayPlan[];
+  references?: PlanReference[];
 }
 
 export interface GeoLocation {

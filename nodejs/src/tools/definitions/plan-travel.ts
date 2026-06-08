@@ -1,4 +1,4 @@
-import { TravelStyle, type UserPreferences, type PlanSummary } from "../../types/index.js";
+import { TravelStyle, type UserPreferences, type PlanSummary, type PlanReference, TravelPlanState } from "../../types/index.js";
 import { TravelPlanningPipeline } from "../../orchestrator/pipeline.js";
 import type { RegisteredTool } from "../types.js";
 import pino, { type Logger } from "pino";
@@ -136,6 +136,7 @@ export function createPlanTravelTool(log?: Logger): RegisteredTool {
           trainReturn: state.trainReturn ?? null,
           hotels: state.hotelResult?.hotels ?? [],
           dayPlans: state.activityResult?.dayPlans ?? [],
+          references: buildReferences(state),
         };
 
         return { success: true, data: result };
@@ -145,4 +146,38 @@ export function createPlanTravelTool(log?: Logger): RegisteredTool {
       }
     },
   };
+}
+
+function buildReferences(state: TravelPlanState): PlanReference[] {
+  const refs: PlanReference[] = [];
+  const seen = new Set<string>();
+
+  for (const h of state.hotelResult?.hotels ?? []) {
+    const key = "hotel_" + h.name;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ title: h.name, source: "hotel", description: `${h.city} · ${"⭐".repeat(Math.min(Math.round(h.starRating), 5))} ¥${h.pricePerNight}/晚 · 评分${h.userRating.toFixed(1)}` });
+  }
+
+  for (const f of state.flightResult?.outboundFlights ?? []) {
+    const key = "flight_" + f.flightNo;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ title: `${f.airline} ${f.flightNo}`, source: "flight", description: `去程 ${f.departureCity}→${f.arrivalCity} ¥${f.price}` });
+  }
+  for (const f of state.flightResult?.returnFlights ?? []) {
+    const key = "flight_" + f.flightNo;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ title: `${f.airline} ${f.flightNo}`, source: "flight", description: `返程 ${f.departureCity}→${f.arrivalCity} ¥${f.price}` });
+  }
+
+  if (state.trainOutbound) {
+    refs.push({ title: `${state.trainOutbound.trainNo} ${state.trainOutbound.departureCity}→${state.trainOutbound.arrivalCity}`, source: "train", description: `去程 ${state.trainOutbound.departureTime}-${state.trainOutbound.arrivalTime} ¥${state.trainOutbound.price}` });
+  }
+  if (state.trainReturn) {
+    refs.push({ title: `${state.trainReturn.trainNo} ${state.trainReturn.departureCity}→${state.trainReturn.arrivalCity}`, source: "train", description: `返程 ${state.trainReturn.departureTime}-${state.trainReturn.arrivalTime} ¥${state.trainReturn.price}` });
+  }
+
+  return refs;
 }

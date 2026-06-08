@@ -148,3 +148,11 @@
   - renderPlanCard 重写为富行程样式：标题/日期/总花费/交通/酒店/逐日行程
   - PlanSummary 新增 departureCity/hotelAlternatives 等字段
   - LLMPlanAgent.callLlmWithTools 新增完整 llm_request/llm_response 日志
+
+### 行程时间线 + 参考资料重构 (2026-06-08)
+
+- `uncommitted` feat: 每日行程改为时间线样式，市内交通内联展示
+  - 前端：renderDayActivity → renderTimelineStop/renderTimelineTransit 时间线组件
+  - 前端：行程卡使用时间线布局（蓝点+竖线），非交通活动显示图标/名称/时段/价格，交通活动显示连接箭头/方式/耗时/费用
+  - 前端：数据源参考改为参考资料，移除重复的每日行程，新增参考来源区域
+  - 后端：PlanSummary 新增 PlanReference 类型 + references 字段，plan-travel 自动聚合酒店/航班/高铁参考信息
