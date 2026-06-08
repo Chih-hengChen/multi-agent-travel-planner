@@ -78,4 +78,5 @@ ai-tutor
 **/node_modules/
 **/logs/
 **/.claude/
-*.xlsxnodejs/data/vectors/
+*.xlsx
+nodejs/data/vectors/
