@@ -175,3 +175,12 @@
 - `uncommitted` feat: 预算循环多轮迭代进度正确报告轮次信息
 - `uncommitted` types: 新增 ProgressUpdate 接口和 ProgressCallback 类型
 - 改动：types/index.ts, parallel.ts, budget-loop.ts, pipeline.ts, turn-handler.ts, conversation-orchestrator.ts, chat.html
+
+### ReAct 式选择状态恢复 (2026-06-08)
+
+- `uncommitted` feat: SELECTING 状态死循环修复 —— LLM tool-call 自主恢复
+  - 替换硬编码回复为 LLM（LLM_LIGHT_MODEL + STRUCTURED temperature）自主决策
+  - 定义 select_option/rescan/skip_selection 工具，LLM 自主调用
+  - 搜索结果为空时 LLM 自动解释并建议下一步
+  - 兼容 OpenAI function_call 和 Anthropic tool_use 双格式
+  - 单文件改动：turn-handler.ts (+159/-6)
