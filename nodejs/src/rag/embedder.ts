@@ -34,22 +34,29 @@ export class Embedder {
   }
 
   private async callEmbeddingApi(text: string): Promise<number[]> {
+    const baseUrl = settings.RAG_EMBEDDING_BASE_URL.replace(/\/+$/, "");
+    const url = baseUrl.includes("/paas/v4") ? baseUrl + "/embeddings" : baseUrl + "/v1/embeddings";
+    const apiKey = settings.RAG_EMBEDDING_API_KEY;
+
     const body: Record<string, unknown> = {
       model: settings.RAG_EMBEDDING_MODEL,
       input: text,
     };
 
-    const resp = await fetch(settings.LLM_BASE_URL + "/v1/embeddings", {
+    const resp = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: "Bearer " + settings.LLM_API_KEY,
+        Authorization: "Bearer " + apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
 
-    if (!resp.ok) throw new Error("Embedding API " + resp.status);
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error("Embedding API " + resp.status + " " + errText.slice(0, 100));
+    }
 
     const data = await resp.json() as { data?: Array<{ embedding: number[] }> };
     const emb = data.data?.[0]?.embedding;
