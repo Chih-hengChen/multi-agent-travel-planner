@@ -98,7 +98,7 @@ export class GatheringAgent {
         body: JSON.stringify({
           model: settings.LLM_LIGHT_MODEL,
           messages,
-          temperature: settings.LLM_TEMPERATURE,
+          temperature: settings.LLM_TEMPERATURE_CHAT,
           max_tokens: settings.LLM_MAX_TOKENS,
         }),
         signal: AbortSignal.timeout(60_000),
@@ -116,7 +116,7 @@ export class GatheringAgent {
         body: JSON.stringify({
           model: settings.LLM_LIGHT_MODEL,
           messages,
-          temperature: settings.LLM_TEMPERATURE,
+          temperature: settings.LLM_TEMPERATURE_CHAT,
           max_tokens: settings.LLM_MAX_TOKENS,
         }),
         signal: AbortSignal.timeout(60_000),

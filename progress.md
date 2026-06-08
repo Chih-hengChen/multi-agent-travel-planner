@@ -156,3 +156,13 @@
   - 前端：行程卡使用时间线布局（蓝点+竖线），非交通活动显示图标/名称/时段/价格，交通活动显示连接箭头/方式/耗时/费用
   - 前端：数据源参考改为参考资料，移除重复的每日行程，新增参考来源区域
   - 后端：PlanSummary 新增 PlanReference 类型 + references 字段，plan-travel 自动聚合酒店/航班/高铁参考信息
+
+### 架构改进：并行执行 + 预算真实化 + 入口统一 (2026-06-08)
+
+- `uncommitted` feat: PipelineExecutor 真正并行执行 FlightAgent+HotelAgent（Promise.allSettled），延迟降低 40-50%
+- `uncommitted` feat: BudgetAgent 约束真实化 —— searchConstraints 传递到数据源重新搜索
+- `uncommitted` refactor: 移除旧入口 POST /api/chat/stream，统一为会话式 API
+- `uncommitted` refactor: DestinationAgent 降级为纯函数 enrichDestination()
+- `uncommitted` perf: VectorStore 启动预热
+- `uncommitted` config: 分层 Temperature + LLM_MAX_TOKENS_PLAN + SESSION_STORE_TYPE
+- `uncommitted` fix: FlightAgent.searchTrains 传递 maxPrice 预算约束

@@ -91,7 +91,7 @@ export class InfoExtractor {
     const body: Record<string, unknown> = {
       model: settings.LLM_LIGHT_MODEL,
       messages: [{ role: "user", content: prompt }],
-      temperature: settings.LLM_TEMPERATURE,
+      temperature: settings.LLM_TEMPERATURE_STRUCTURED,
       max_tokens: settings.LLM_MAX_TOKENS,
     };
 
@@ -124,7 +124,7 @@ export class InfoExtractor {
       body: JSON.stringify({
         model: settings.LLM_LIGHT_MODEL,
         messages: [{ role: "user", content: prompt }],
-        temperature: settings.LLM_TEMPERATURE,
+        temperature: settings.LLM_TEMPERATURE_STRUCTURED,
         max_tokens: settings.LLM_MAX_TOKENS,
       }),
       signal: AbortSignal.timeout(60_000),

@@ -4,11 +4,10 @@
 
 ```
 src/
-├── agents/                    # 7 个领域 Agent + 1 个基类
-│   ├── base-agent.ts          # 抽象基类（模板方法 + LLM 调用）
+├── agents/                    # 6 个领域 Agent + 1 个基类
+│   ├── base-agent.ts          # 抽象基类（模板方法 + LLM 调用，支持分层 temperature/maxTokens/model）
 │   ├── preference-agent.ts    # 偏好校验
-│   ├── destination-agent.ts   # 目的地推荐（LLM 生成）
-│   ├── flight-agent.ts        # 航班/高铁搜索与评分
+│   ├── flight-agent.ts        # 航班/高铁搜索与评分（支持 searchConstraints 预算约束）
 │   ├── hotel-agent.ts         # 酒店搜索与评分
 │   ├── activity-agent.ts      # 活动规划（LLMPlanAgent 降级兜底）
 │   ├── llm-plan-agent.ts      # LLM 驱动行程生成（主力）
@@ -38,9 +37,9 @@ src/
 │   │   └── search-attractions.ts
 │   └── index.ts
 ├── orchestrator/              # 编排层
-│   ├── pipeline.ts            # 主流水线（Preference → Destination → BudgetLoop）
-│   ├── parallel.ts            # 逐个执行器（实际顺序执行，名称历史遗留）
-│   ├── budget-loop.ts         # 预算调整循环控制器
+│   ├── pipeline.ts            # 主流水线（Preference → enrichDestination → BudgetLoop，DestinationAgent 内联）
+│   ├── parallel.ts            # PipelineExecutor — 支持 runSequential / runParallel（Flight+Hotel 真正并行）
+│   ├── budget-loop.ts         # 预算调整循环控制器（飞行+酒店并行 → LLM 计划顺序 → 预算检查）
 │   ├── conversation-orchestrator.ts  # 会话编排
 │   └── index.ts
 ├── conversation/              # 多轮对话模块
@@ -50,11 +49,10 @@ src/
 │   ├── turn-handler.ts        # 单轮处理（意图路由 → 提取 → 状态推进）
 │   └── info-extractor.ts      # 自然语言偏好提取（LLM+正则）
 ├── api/                       # HTTP + SSE 接口层
-│   ├── app.ts                 # Fastify 服务工厂
-│   ├── routes.ts              # 路由注册（REST + SSE）
+│   ├── app.ts                 # Fastify 服务工厂（启动时执行 VectorStore 预热）
+│   ├── routes.ts              # 路由注册（REST + SSE，旧 /api/chat/stream 已移除）
 │   ├── llm-client.ts          # Anthropic 流式 API 客户端
-│   ├── tools.ts               # tool_use schema + executeTool
-│   └── stream-handler.ts      # SSE 聊天主逻辑（旧 agent loop）
+│   └── stream-handler.ts      # SSE 聊天主逻辑（仅会话入口，旧 agent loop 已移除）
 ├── data-sources/              # 数据源层（全部真实来源，无 mock）
 │   ├── types.ts               # TravelDataSource 接口
 │   ├── source-resolver.ts     # 数据源选择器（per-source 超时 + fallback 链）
@@ -144,23 +142,7 @@ ConversationOrchestrator → emit SSE events → save ctx → SessionStore
 | `error` | `{ error: "message", recoverable: true }` |
 | `done` | `{}` |
 
-### 对话式聊天流（旧入口，仍可用）
-
-```
-浏览器 chat.html
-  │  POST /api/chat/stream (SSE)
-  ▼
-stream-handler.ts :: handleChatStream()
-  │  SSE 握手 (text/event-stream)
-  ▼
-runAgentLoop() ──── 最多 5 轮
-  │  streamChat(messages, TOOLS, SYSTEM_PROMPT)
-  │     → Anthropic API 流式 tool_use 循环
-  │     → text_delta / tool_use / tool_result
-  │     → LLM 自主决定何时调用 plan_travel
-  ▼
-浏览器渲染：marked.js Markdown + 行程卡片
-```
+> 旧入口 `POST /api/chat/stream` 已移除（2026-06-08 架构改进）。所有会话交互统一走 `/api/chat` 创建会话 + `/api/chat/:sid` 流式消息。
 
 ### Pipeline 内部执行流
 
@@ -171,27 +153,28 @@ UserPreferences
 [PreferenceAgent] ─── 校验 preferences 非空
   │  state → RECOMMENDING_DESTINATIONS
   ▼
-[DestinationAgent] ── LLM 生成目的地信息
-  │  必须有 preferredDestination
-  │  callLlm() → JSON 解析 → Destination
+[enrichDestination()] ── LLM 生成目的地信息（原 DestinationAgent 内联为纯函数）
+  │  使用 LLM_LIGHT_MODEL + LLM_TEMPERATURE_STRUCTURED（0.1）保证 JSON 稳定性
   │  失败返回兜底对象
   ▼
 [BudgetLoopController] ── 最多 3 轮循环
   │
-  │  ┌─ [顺序执行各 Agent] ─────────────────┐
-  │  │  for (agent of agents) {              │
-  │  │    runSingle(agent, state)            │
-  │  │    ← 120s 超时 → 1.5x 重试 → 降级    │
-  │  │  }                                    │
-  │  │  Agent 顺序：                          │
-  │  │    1. FlightAgent                     │
-  │  │    2. HotelAgent                      │
-  │  │    3. LLMPlanAgent（主力）             │
+  │  ┌─ [真正并行执行] ──────────────────────┐
+  │  │  Promise.allSettled([                  │
+  │  │    FlightAgent,    ← 无数据依赖        │
+  │  │    HotelAgent      ← 可同时执行        │
+  │  │  ])                                    │
+  │  │  → 各自 120s 超时 → 1.5x 重试 → 降级  │
+  │  └────────────────────────────────────────┘
+  │                    ▼
+  │  ┌─ [顺序执行 LLM 计划] ─────────────────┐
+  │  │  LLMPlanAgent（依赖前两者结果）        │
+  │  │  ← 120s 超时 → 1.5x 重试 → 降级      │
   │  └────────────────────────────────────────┘
   │                    ▼
   │  [BudgetAgent] ── 汇总费用
   │     ├── 预算内 → COMPLETED
-  │     ├── 超预算 & round < max → ADJUSTING，削减后重试
+  │     ├── 超预算 & round < max → ADJUSTING，重新搜索（searchConstraints 传递到数据源）
   │     └── 超预算 & round ≥ max → COMPLETED + warnings
   └────────────────────┘
          │
@@ -252,11 +235,11 @@ abstract class BaseAgent {
 
 校验 `state.preferences` 非空，推进 state。不处理任何数据。
 
-### DestinationAgent
+### ~~DestinationAgent~~ → enrichDestination()（内联纯函数）
 
-LLM 根据 `preferredDestination` 生成目的地信息（国家、描述、最佳季节、签证要求、安全评分、消费水平、亮点）。
+> 2026-06-08 重构：从 BaseAgent 子类降级为普通工具函数 `enrichDestination(city, budget)`，内联到 Pipeline。原因：该类无工具调用、无决策逻辑、不写入 state 之外的字段，不应是一个 Agent。
 
-失败时返回仅有 city 的兜底对象。
+使用 `LLM_LIGHT_MODEL` + `LLM_TEMPERATURE_STRUCTURED(0.1)` 生成目的地信息（国家、描述、最佳季节、签证要求、安全评分、消费水平、亮点）。失败时返回仅有 city 的兜底对象。
 
 ### FlightAgent
 
@@ -327,7 +310,9 @@ remaining = budget - total
 if remaining >= 0:
     → COMPLETED
 elif round < maxAdjustments(3):
-    → ADJUSTING, 逐轮削减（活动/酒店/航班按比例递减）
+    → ADJUSTING, computeConstraints() 生成更紧的搜索约束
+      FlightAgent/HotelAgent 读取 searchConstraints 重新搜索真实低价
+      （不再是纸面降价，而是带 maxPrice 参数重新调用数据源）
 else:
     → COMPLETED + warnings
 ```
@@ -336,9 +321,11 @@ else:
 
 多轮对话中生成自然语言提问，引导用户补充缺失的旅行偏好字段（目的地、日期、预算等）。
 
+使用 `LLM_LIGHT_MODEL` + `LLM_TEMPERATURE_CHAT(0.6)` 控制对话质量。
+
 ## 工具注册表 (ToolRegistry)
 
-**`src/tools/registry.ts`** — 用于旧 LLM agent loop（stream-handler）的统一工具管理：
+**`src/tools/registry.ts`** — 唯一工具注册入口（旧 `src/api/tools.ts` 已移除）。
 
 | 工具 | 说明 | 超时 |
 |------|------|------|
@@ -392,18 +379,20 @@ INIT → GATHERING_BASICS → GATHERING_PREFERENCES
 
 ## 编排层细节
 
-### ParallelExecutor
+### PipelineExecutor（原 ParallelExecutor）
 
-**实际为顺序执行**（名称历史遗留）：
+**已改为真正并行执行**（2026-06-08 架构改进）：
 
 ```typescript
-async run(state): Promise<{ state, results }> {
-  for (const agent of this.agents) {
-    const result = await this.runSingle(agent, state);
-    // ← 每个 agent 执行完才执行下一个
-  }
-}
+// 无数据依赖：FlightAgent + HotelAgent 同时运行
+const settled = await Promise.allSettled(
+  this.agents.map((agent) => this.runSingle(agent, state)),
+);
 ```
+
+**执行策略**:
+- `runParallel()` — 用于 FlightAgent + HotelAgent（无数据依赖，可同时搜索），延迟降低 40-50%
+- `runSequential()` — 用于 LLMPlanAgent（依赖前两者结果）
 
 **关键特性**: 每个 agent 独立超时(120s) → 重试(1.5x) → 降级。部分 agent 失败不阻塞整体 pipeline。
 
@@ -411,12 +400,14 @@ async run(state): Promise<{ state, results }> {
 
 ```typescript
 for (let attempt = 0; attempt <= maxRetries(3); attempt++) {
-  // 顺序执行 FlightAgent → HotelAgent → LLMPlanAgent
-  const { state: newState } = await this.parallelExecutor.run(state);
+  // 真正并行 FlightAgent + HotelAgent
+  const { state: searchState } = await this.flightHotelExecutor.runParallel(state);
+  // 再顺序执行 LLMPlanAgent
+  const { state: planState } = await this.planExecutor.runSequential(searchState);
   // 预算检查
-  state = await this.budgetAgent.run(state);
+  state = await this.budgetAgent.run(planState);
   if (COMPLETED || FAILED) return state;
-  // ADJUSTING → 继续下一轮（带削减参数）
+  // ADJUSTING → 继续下一轮（searchConstraints 传递到数据源重新搜索）
 }
 ```
 
@@ -492,21 +483,7 @@ streamChat(messages, tools?, system?, onDelta?) → Promise<ChatResult>
 // → content_block_stop → message_stop
 ```
 
-**`tools.ts`** — tool_use 定义与执行：
-```typescript
-const TOOLS = [{ name: "plan_travel", input_schema: {...} }]
-executeTool(name, input):
-  plan_travel → 构建 UserPreferences → Pipeline.run() → PlanSummary
-```
-
-**`stream-handler.ts`** — SSE 聊天主逻辑：
-```typescript
-runAgentLoop(messages, reply):
-  for round 0..4:
-    streamChat(messages, TOOLS, SYSTEM_PROMPT)
-    → 无 tool_use → break
-    → 有 tool_use → executeTool → tool_result 回写 messages → 继续循环
-```
+**`stream-handler.ts`** — SSE 聊天主逻辑（仅保留会话入口 `handleConversationMessage` 和 `handleSelectMessage`，旧 `handleChatStream` + `runAgentLoop` 已移除）。工具调用统一走 `tools/registry.ts`。
 
 ### REST 路由
 
@@ -518,7 +495,8 @@ runAgentLoop(messages, reply):
 | GET | `/api/chat/:sid` | 获取会话状态 |
 | DELETE | `/api/chat/:sid` | 删除会话 |
 | PUT | `/api/chat/:sid/plan` | 编辑行程计划 |
-| POST | `/api/chat/stream` | 旧版流式聊天（SSE） |
+| POST | `/api/plan` | 一键计划（完整 Pipeline） |
+| POST | `/api/plan/full` | 一键计划（完整 TravelPlanState） |
 
 ### 前端 (`chat.html`)
 
@@ -554,8 +532,12 @@ TrainSchema            → Train
 | `LLM_BASE_URL` | `https://api.minimax.chat/v1` | API 地址 |
 | `LLM_MODEL` | `MiniMax-M2.7` | 模型名 |
 | `LLM_LIGHT_MODEL` | `glm-4.7` | 轻量模型 |
-| `LLM_TEMPERATURE` | `0.7` | 生成温度 |
-| `LLM_MAX_TOKENS` | `4096` | 最大 token 数 |
+| `LLM_TEMPERATURE` | `0.7` | 生成温度（默认，向后兼容） |
+| `LLM_TEMPERATURE_STRUCTURED` | `0.1` | 结构化任务温度（InfoExtractor, enrichDestination） |
+| `LLM_TEMPERATURE_CREATIVE` | `0.7` | 创意任务温度（LLMPlanAgent 行程生成） |
+| `LLM_TEMPERATURE_CHAT` | `0.6` | 对话任务温度（GatheringAgent） |
+| `LLM_MAX_TOKENS` | `4096` | 默认最大 token 数 |
+| `LLM_MAX_TOKENS_PLAN` | `8192` | LLMPlanAgent 行程生成最大 token 数 |
 | `BUDGET_MAX_RETRIES` | `3` | 预算调整最大轮次 |
 | `API_HOST` | `0.0.0.0` | 监听地址 |
 | `API_PORT` | `3000` | 监听端口 |

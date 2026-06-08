@@ -28,6 +28,7 @@ export interface TrainSearchParams {
   from: string;
   to: string;
   date: string;
+  maxPrice?: number;
 }
 
 export interface RestaurantSearchParams {

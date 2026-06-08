@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { TravelStyle, PlanRequestSchema, type PlanSummary, type UserPreferences } from "../types/index.js";
 import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
-import { handleChatStream, handleConversationMessage, handleSelectMessage } from "./stream-handler.js";
+import { handleConversationMessage, handleSelectMessage } from "./stream-handler.js";
 import { createSessionStore } from "../conversation/session-store.js";
 import { InfoExtractor } from "../conversation/info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
@@ -17,14 +17,6 @@ const orchestrator = new ConversationOrchestrator(sessionStore, turnHandler);
 export function registerRoutes(app: FastifyInstance) {
   app.get("/", async (_request, reply) => {
     return reply.redirect("/chat.html");
-  });
-
-  app.post("/api/chat/stream", async (request, reply) => {
-    const body = request.body as { message?: string; messages?: unknown[] };
-    if (!body?.message && !body?.messages?.length) {
-      return reply.status(400).send({ error: "message or messages is required" });
-    }
-    await handleChatStream(request as any, reply);
   });
 
   app.get("/api/health", async () => ({

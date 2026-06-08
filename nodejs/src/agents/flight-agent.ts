@@ -71,16 +71,19 @@ export class FlightAgent extends BaseAgent {
   private async searchTrains(state: TravelPlanState): Promise<TravelPlanState> {
     const pref = state.preferences!;
     const dest = state.selectedDestination!;
+    const maxPrice = state.searchConstraints?.maxFlightPricePerPerson;
 
     const outbound = await this.dataSource.searchTrains({
       from: pref.departureCity,
       to: dest.city,
       date: pref.startDate,
+      maxPrice,
     });
     const returns = await this.dataSource.searchTrains({
       from: dest.city,
       to: pref.departureCity,
       date: pref.endDate,
+      maxPrice,
     });
 
     const budgetShare = pref.budget * 0.3;

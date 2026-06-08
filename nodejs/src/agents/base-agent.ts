@@ -80,7 +80,7 @@ export abstract class BaseAgent {
 
   protected abstract execute(state: TravelPlanState): Promise<TravelPlanState>;
 
-  protected async callLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {
+  protected async callLlm(prompt: string, systemPrompt?: string, model?: string, opts?: { temperature?: number; maxTokens?: number }): Promise<string> {
     const usedModel = model ?? settings.LLM_MODEL;
     logWithSession("llm_request", {
       agent: this.name,
@@ -88,7 +88,7 @@ export abstract class BaseAgent {
       systemPrompt: systemPrompt?.slice(0, 200),
       messages: [{ role: "user", content: prompt.slice(0, 500) }],
     });
-    const result = await this.realLlm(prompt, systemPrompt, model);
+    const result = await this.realLlm(prompt, systemPrompt, { model, ...opts });
     logWithSession("llm_response", {
       agent: this.name,
       model: usedModel,
@@ -97,28 +97,28 @@ export abstract class BaseAgent {
     return result;
   }
 
-  private async realLlm(prompt: string, systemPrompt?: string, model?: string): Promise<string> {
+  private async realLlm(prompt: string, systemPrompt?: string, opts?: { model?: string; temperature?: number; maxTokens?: number }): Promise<string> {
     const isAnthropic = settings.LLM_PROVIDER === "anthropic";
     const messages: Array<{ role: string; content: string }> = [];
     if (!isAnthropic && systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
 
     if (isAnthropic) {
-      return this.anthropicLlm(messages, systemPrompt, model);
+      return this.anthropicLlm(messages, systemPrompt, opts);
     }
-    return this.openaiLlm(messages, model);
+    return this.openaiLlm(messages, opts);
   }
 
   private async anthropicLlm(
     messages: Array<{ role: string; content: string }>,
     systemPrompt?: string,
-    model?: string,
+    opts?: { model?: string; temperature?: number; maxTokens?: number },
   ): Promise<string> {
     const body: Record<string, unknown> = {
-      model: model ?? settings.LLM_MODEL,
+      model: opts?.model ?? settings.LLM_MODEL,
       messages,
-      temperature: settings.LLM_TEMPERATURE,
-      max_tokens: settings.LLM_MAX_TOKENS,
+      temperature: opts?.temperature ?? settings.LLM_TEMPERATURE,
+      max_tokens: opts?.maxTokens ?? settings.LLM_MAX_TOKENS,
     };
     if (systemPrompt) body.system = systemPrompt;
 
@@ -137,7 +137,7 @@ export abstract class BaseAgent {
     return data.content[0].text;
   }
 
-  private async openaiLlm(messages: Array<{ role: string; content: string }>, model?: string): Promise<string> {
+  private async openaiLlm(messages: Array<{ role: string; content: string }>, opts?: { model?: string; temperature?: number; maxTokens?: number }): Promise<string> {
     const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
@@ -145,10 +145,10 @@ export abstract class BaseAgent {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: model ?? settings.LLM_MODEL,
+        model: opts?.model ?? settings.LLM_MODEL,
         messages,
-        temperature: settings.LLM_TEMPERATURE,
-        max_tokens: settings.LLM_MAX_TOKENS,
+        temperature: opts?.temperature ?? settings.LLM_TEMPERATURE,
+        max_tokens: opts?.maxTokens ?? settings.LLM_MAX_TOKENS,
       }),
       signal: AbortSignal.timeout(60_000),
     });

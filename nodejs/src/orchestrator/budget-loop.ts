@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { PlanningState, type TravelPlanState } from "../types/index.js";
 import type { BudgetAgent } from "../agents/budget-agent.js";
-import type { ParallelExecutor, AgentRunResult } from "./parallel.js";
+import type { PipelineExecutor, AgentRunResult } from "./parallel.js";
 import { sessionLogger } from "../logging/session-logger.js";
 import { settings } from "../config/settings.js";
 
@@ -9,7 +9,8 @@ export class BudgetLoopController {
   private readonly maxRetries: number;
 
   constructor(
-    private readonly parallelExecutor: ParallelExecutor,
+    private readonly flightHotelExecutor: PipelineExecutor,
+    private readonly planExecutor: PipelineExecutor,
     private readonly budgetAgent: BudgetAgent,
     private readonly log: Logger,
     maxRetries?: number,
@@ -25,8 +26,14 @@ export class BudgetLoopController {
       this.log.info({ attempt, label }, "预算循环迭代");
 
       if (attempt === 0 || state.state === PlanningState.ADJUSTING) {
-        const { state: newState, results } = await this.parallelExecutor.run(state);
-        state = newState;
+        // Flight + Hotel 无数据依赖，真正并行；LLMPlan 依赖前两者结果，顺序执行
+        const { state: searchState, results: searchResults } = await this.flightHotelExecutor.runParallel(state);
+        state = searchState;
+
+        const { state: planState, results: planResults } = await this.planExecutor.runSequential(state);
+        state = planState;
+
+        const results = [...searchResults, ...planResults];
 
         this.handleAgentFailures(state, results, attempt);
 

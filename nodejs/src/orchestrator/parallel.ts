@@ -32,8 +32,8 @@ export class ParallelExecutor {
     private readonly defaultMaxRetries = 1,
   ) {}
 
-  async run(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
-    this.log.info({ agents: this.agents.length }, "并行执行开始");
+  async runSequential(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+    this.log.info({ agents: this.agents.length }, "顺序执行开始");
 
     const results: AgentRunResult[] = [];
 
@@ -50,8 +50,51 @@ export class ParallelExecutor {
       this.log.warn({ failed: failed.map((r) => r.agentName) }, "部分 Agent 执行失败");
     }
 
+    this.log.info("顺序执行完成");
+    return { state, results };
+  }
+
+  async runParallel(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+    this.log.info({ agents: this.agents.length }, "真正并行执行");
+
+    const settled = await Promise.allSettled(
+      this.agents.map((agent) => this.runSingle(agent, state)),
+    );
+
+    const results: AgentRunResult[] = [];
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i];
+      if (s.status === "fulfilled") {
+        results.push(s.value);
+        if (s.value.error) {
+          state.errorMessages.push(`${this.agents[i].name}: ${s.value.error}`);
+        }
+      } else {
+        const err = s.reason instanceof Error ? s.reason.message : String(s.reason);
+        results.push({
+          agentName: this.agents[i].name,
+          success: false,
+          timedOut: true,
+          retried: false,
+          degraded: false,
+          error: err,
+        });
+        state.errorMessages.push(`${this.agents[i].name}: ${err}`);
+      }
+    }
+
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      this.log.warn({ failed: failed.map((r) => r.agentName) }, "部分 Agent 并行执行失败");
+    }
+
     this.log.info("并行执行完成");
     return { state, results };
+  }
+
+  /** @deprecated Use runSequential or runParallel instead */
+  async run(state: TravelPlanState): Promise<{ state: TravelPlanState; results: AgentRunResult[] }> {
+    return this.runSequential(state);
   }
 
   private async runSingle(agent: BaseAgent, state: TravelPlanState): Promise<AgentRunResult> {

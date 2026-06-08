@@ -13,6 +13,17 @@ if (process.platform === "win32") {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+async function warmupVectorStore(logger: { info: (o: Record<string, unknown>, m: string) => void }) {
+  if (!settings.RAG_ENABLED) return;
+  try {
+    const { RagSource } = await import("../rag/rag-source.js");
+    const rag = new RagSource();
+    await rag.ensureInit();
+    const stats = await rag.getStats();
+    logger.info({ docs: stats.totalDocs, store: settings.RAG_CHROMA_URL ? "chroma" : "memory" }, "rag: warmed up");
+  } catch { /* best-effort */ }
+}
+
 export async function createServer() {
   const app = Fastify({
     logger: {
@@ -27,6 +38,9 @@ export async function createServer() {
     prefix: "/",
   });
   registerRoutes(app);
+
+  warmupVectorStore(app.log);
+
   return app;
 }
 

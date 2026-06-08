@@ -259,8 +259,8 @@ export class LLMPlanAgent extends BaseAgent {
       model: settings.LLM_MODEL,
       messages,
       tools,
-      temperature: 0.7,
-      max_tokens: 8192,
+      temperature: settings.LLM_TEMPERATURE_CREATIVE,
+      max_tokens: settings.LLM_MAX_TOKENS_PLAN,
     };
 
     const sid = sessionId ?? getSessionId();
