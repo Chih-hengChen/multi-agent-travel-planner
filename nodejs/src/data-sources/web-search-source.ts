@@ -329,7 +329,7 @@ export class WebSearchSource implements TravelDataSource {
         const resp = await fetch(`${settings.WEBSEARCH_DAEMON_URL}/fetch-web`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: item.url, maxChars: 3000 }),
+          body: JSON.stringify({ url: item.url, maxChars: 5000 }),
           signal: AbortSignal.timeout(10_000),
         });
         if (!resp.ok) return null;
@@ -341,11 +341,22 @@ export class WebSearchSource implements TravelDataSource {
 
     for (const r of settled) {
       if (r.status === "fulfilled" && r.value?.content) {
-        result.set(r.value.index, r.value.content.substring(0, 3000));
+        result.set(r.value.index, this.cleanWebContent(r.value.content).substring(0, 3000));
       }
     }
 
     return result;
+  }
+
+  private cleanWebContent(content: string): string {
+    return content.split(/\n/).filter((line) => {
+      const t = line.trim();
+      if (t.length < 4) return false;
+      if (/^(?:登录|注册|我的订单|联系客服|旅游首页|关于我们|帮助中心|网站导航|宾馆索引|攻略索引|机票索引)$/i.test(t)) return false;
+      if (/^(?:酒店机票|特价机票|火车票|国内租车|境外租车|礼品卡|企业商旅|跟团游|自由行|邮轮|签证保险|企业会奖).{0,10}$/.test(t)) return false;
+      if (/^[▪●►◆◇○·•┃▸▹▶]+$/.test(t)) return false;
+      return true;
+    }).join("\n");
   }
 
   private formatSearchResults(items: SearchResultItem[], contents: Map<number, string>): string {
