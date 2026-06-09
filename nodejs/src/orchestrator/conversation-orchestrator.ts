@@ -114,7 +114,10 @@ export class ConversationOrchestrator {
       state: ctx.state,
     });
 
-    const result: TurnResult = await this.turnHandler.handleSelect(ctx, request);
+    const onProgress: import("../types/index.js").ProgressCallback = (update) => {
+      emit("progress", update);
+    };
+    const result: TurnResult = await this.turnHandler.handleSelect(ctx, request, onProgress);
 
     if (result.newState !== ctx.state) {
       emit("state_change", { state: result.newState });

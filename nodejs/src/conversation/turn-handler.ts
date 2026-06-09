@@ -110,7 +110,7 @@ export class TurnHandler {
       ctx.state === ConversationState.SELECTING_TRANSPORT ||
       ctx.state === ConversationState.SELECTING_HOTEL
     ) {
-      return this.handleSelectingState(ctx, userMessage);
+      return this.handleSelectingState(ctx, userMessage, onProgress);
     }
 
     const knownFields = this.getKnownFields(ctx);
@@ -170,6 +170,7 @@ export class TurnHandler {
   async handleSelect(
     ctx: ConversationContext,
     request: SelectRequest,
+    onProgress?: ProgressCallback,
   ): Promise<TurnResult> {
     if (request.action === "rescan") {
       if (ctx.state === ConversationState.SELECTING_TRANSPORT) {
@@ -218,7 +219,7 @@ export class TurnHandler {
       ctx.selectedHotel = ctx.hotelOptions?.find((h) => h.name === request.hotelId);
 
       if (canTransition(ctx.state, ConversationState.SEARCHING)) {
-        return this.runPipeline(ctx);
+        return this.runPipeline(ctx, onProgress);
       }
 
       return {
@@ -233,7 +234,7 @@ export class TurnHandler {
     };
   }
 
-  private async handleSelectingState(ctx: ConversationContext, userMessage: string): Promise<TurnResult> {
+  private async handleSelectingState(ctx: ConversationContext, userMessage: string, onProgress?: ProgressCallback): Promise<TurnResult> {
     const isHotel = ctx.state === ConversationState.SELECTING_HOTEL;
     let optionsStr: string;
     let optionCount = 0;
@@ -263,14 +264,14 @@ export class TurnHandler {
         const fnArgs = JSON.parse(tc.function?.arguments || "{}");
 
         if (fnName === "select_option" && typeof fnArgs.index === "number") {
-          return this.executeOptionSelect(ctx, fnArgs.index, isHotel);
+          return this.executeOptionSelect(ctx, fnArgs.index, isHotel, onProgress);
         }
         if (fnName === "rescan") {
           if (isHotel) return this.searchHotels(ctx);
           return this.searchTransport(ctx);
         }
         if (fnName === "skip_selection") {
-          if (isHotel) return this.runPipeline(ctx);
+          if (isHotel) return this.runPipeline(ctx, onProgress);
           ctx.state = ConversationState.SELECTING_TRANSPORT;
           return { newState: ctx.state, replyText: "已跳过交通选择，是否继续规划？请选择出发城市和目的地。" };
         }
@@ -369,14 +370,14 @@ ${optionsStr}
     return resp.json();
   }
 
-  private async executeOptionSelect(ctx: ConversationContext, index: number, isHotel: boolean): Promise<TurnResult> {
+  private async executeOptionSelect(ctx: ConversationContext, index: number, isHotel: boolean, onProgress?: ProgressCallback): Promise<TurnResult> {
     if (isHotel) {
       const options = ctx.hotelOptions || [];
       const hotel = options[index];
       if (!hotel) return { newState: ctx.state, replyText: `没有找到序号 ${index} 对应的选项，请重新选择。` };
       ctx.selectedHotel = hotel;
       if (canTransition(ctx.state, ConversationState.SEARCHING)) {
-        return this.runPipeline(ctx);
+        return this.runPipeline(ctx, onProgress);
       }
       return { newState: ctx.state, replyText: `已选择 ${hotel.name}，正在为您规划行程...` };
     }

@@ -716,7 +716,13 @@ async function postSelect(body, botBubble) {
               botBubble.innerHTML = marked.parse(fullText) + renderHotelCard(data);
               scrollBottom();
             } else if (currentEvent === 'tool_result') {
-              if (data.tool === 'plan_travel') planData = data.result;
+              if (data.tool === 'plan_travel') {
+                planData = data.result;
+                rendered = true;
+                botBubble.classList.remove('typing');
+                botBubble.innerHTML = marked.parse(fullText) + renderPlanCard(data.result);
+                scrollBottom();
+              }
             } else if (currentEvent === 'error') {
               fullText += `\n\n❌ 错误: ${data.error}`;
             }
