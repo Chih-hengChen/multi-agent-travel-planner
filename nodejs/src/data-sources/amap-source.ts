@@ -93,6 +93,20 @@ interface AmapPoi {
 }
 
 export class AmapSource implements TravelDataSource {
+  /** 高德 API 限流：最大 3 QPS（个人开发者限制） */
+  private static requestTimestamps: number[] = [];
+
+  private static async throttle(): Promise<void> {
+    const now = Date.now();
+    const windowStart = now - 1000;
+    AmapSource.requestTimestamps = AmapSource.requestTimestamps.filter(t => t > windowStart);
+    if (AmapSource.requestTimestamps.length >= 3) {
+      const waitMs = AmapSource.requestTimestamps[0] + 1000 - now;
+      if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
+    }
+    AmapSource.requestTimestamps.push(Date.now());
+  }
+
   async searchFlights(_params: FlightSearchParams): Promise<never[]> { return []; }
   async searchHotels(_params: HotelSearchParams): Promise<never[]> { return []; }
   async searchTrains(_params: TrainSearchParams): Promise<never[]> { return []; }
@@ -112,6 +126,7 @@ export class AmapSource implements TravelDataSource {
         extensions: "all",
       });
 
+      await AmapSource.throttle();
       const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
         signal: AbortSignal.timeout(15_000),
       });
@@ -164,6 +179,7 @@ export class AmapSource implements TravelDataSource {
         extensions: "all",
       });
 
+      await AmapSource.throttle();
       const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
         signal: AbortSignal.timeout(15_000),
       });
@@ -220,6 +236,7 @@ export class AmapSource implements TravelDataSource {
       strategy: "2",
     });
 
+    await AmapSource.throttle();
     const resp = await fetch(`https://restapi.amap.com/v5/direction/transit/integrated?${qs}`, {
       signal: AbortSignal.timeout(15_000),
     });
@@ -288,6 +305,7 @@ export class AmapSource implements TravelDataSource {
       strategy: "32",
     });
 
+    await AmapSource.throttle();
     const resp = await fetch(`https://restapi.amap.com/v5/direction/driving?${qs}`, {
       signal: AbortSignal.timeout(15_000),
     });
