@@ -57,8 +57,11 @@ export class LLMPlanAgent extends BaseAgent {
     let hasSearchedWeather = false;
     let hasSearchedAttractions = false;
     let hasSearchedDining = false;
+    let hasSearchedXhs = false;
     const toolCallHistory: string[] = [];
     const MAX_CONTEXT_CHARS = 100_000;
+    const MIN_TOOL_CALLS = 4;
+    let totalToolCalls = 0;
 
     const maxRounds = 10;
     for (let round = 0; round < maxRounds; round++) {
@@ -96,16 +99,35 @@ export class LLMPlanAgent extends BaseAgent {
         if (tc.name === "search_weather") hasSearchedWeather = true;
         if (tc.name === "search_attractions") hasSearchedAttractions = true;
         if (tc.name === "search_restaurants") hasSearchedDining = true;
+        if (tc.name === "search_xhs_notes") hasSearchedXhs = true;
       }
+      totalToolCalls += toolCalls.length;
 
       messages.push({ role: "assistant", content: response.content as unknown[] });
 
       if (toolCalls.length === 0) {
+        const hasKeyData = hasSearchedAttractions && hasSearchedDining && hasSearchedXhs;
+
+        // Enforce minimum tool calls before accepting text output as final plan
+        if (totalToolCalls < MIN_TOOL_CALLS || !hasKeyData) {
+          const missing: string[] = [];
+          if (!hasSearchedAttractions) missing.push("search_attractions(景点)");
+          if (!hasSearchedDining) missing.push("search_restaurants(餐厅)");
+          if (!hasSearchedXhs) missing.push("search_xhs_notes(小红书探店)");
+          if (!hasSearchedWeather) missing.push("search_weather(天气)");
+          if (missing.length === 0) missing.push("search_xhs_notes(小红书) 或 search_travel_guides(攻略)");
+
+          const forceMsg = "【强制】检测到你未调用足够工具就直接生成行程。当前已调用 " + totalToolCalls + " 次，最少需要 " + MIN_TOOL_CALLS + " 次。缺少的信息来源：" + missing.join("、") + "。请先调用以上工具收集真实数据，再输出行程。";
+          this.log.warn({ forceMsg, totalToolCalls, missing }, "LLM plan: forcing tool use");
+          messages.push({ role: "user", content: forceMsg });
+          continue;
+        }
+
         const fullText = textBlocks.join("");
         const dayPlans = this.parsePlanResponse(fullText, days, dest.city, pref);
         const totalCost = dayPlans.reduce((sum, d) => sum + d.dayCost, 0);
         state.activityResult = { dayPlans, totalActivityCost: totalCost };
-        this.log.info({ agent: this.name, days: dayPlans.length, totalCost }, "LLM行程生成完成");
+        this.log.info({ agent: this.name, days: dayPlans.length, totalCost, toolCalls: totalToolCalls }, "LLM行程生成完成");
         return state;
       }
 
@@ -346,7 +368,8 @@ export class LLMPlanAgent extends BaseAgent {
           interests: Array.isArray(input.interests) ? input.interests.map(String) : undefined,
           maxResults: Number(input.max_results) || 10,
         });
-        const summary = results.slice(0, 12).map((a) =>
+        const reranked = this.rerankResults(results, { city, query: input.query, interests: pref.interests, maxResults: 12 });
+        const summary = reranked.map((a) =>
           a.name + " [" + a.category + "] ¥" + a.price + (a.geoLocation ? " (" + a.geoLocation.lat.toFixed(3) + "," + a.geoLocation.lon.toFixed(3) + ")" : "")
         ).join("\n");
         return { success: true, count: results.length, attractions: summary };
@@ -359,7 +382,8 @@ export class LLMPlanAgent extends BaseAgent {
           diningPreference: (String(input.preference ?? "local_specialties")) as any,
           maxResults: Number(input.max_results) || 8,
         });
-        const summary = results.slice(0, 8).map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
+        const reranked = this.rerankResults(results, { city, query: String(input.meal_type ?? ""), interests: pref.interests, maxResults: 8 });
+        const summary = reranked.map((r) => r.name + " ¥" + r.price + " " + (r.description || "")).join("\n");
         return { success: true, count: results.length, restaurants: summary };
       }
 
@@ -466,5 +490,44 @@ export class LLMPlanAgent extends BaseAgent {
       const d = new Date(d1.getTime() + i * 86400000);
       return d.toISOString().slice(0, 10);
     });
+  }
+
+  private rerankResults(
+    results: Activity[],
+    opts: { city: string; query?: unknown; interests?: string[]; maxResults: number },
+  ): Activity[] {
+    if (results.length <= 1) return results;
+
+    const interests = opts.interests ?? [];
+
+    const scored = results.map((r) => {
+      let score = 0;
+
+      // Rating contribution (0-40 points)
+      score += (r.rating ?? 0) * 5;
+
+      // Interest keyword match in name and category
+      for (const interest of interests) {
+        if (r.name.includes(interest)) score += 20;
+        if (r.category?.includes(interest)) score += 15;
+      }
+
+      // Name length: longer = more specific (0-15 bonus)
+      score += Math.min(15, r.name.length);
+
+      // Price: prefer moderate over free or extreme
+      const price = r.price ?? 0;
+      if (price > 0 && price < 500) score += 10; // reasonable price
+
+      // Category specificity: specific categories rank higher
+      if (r.category && !["景点", "旅游", "公园"].includes(r.category)) {
+        score += 8;
+      }
+
+      return { item: r, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, opts.maxResults).map((r) => r.item);
   }
 }
