@@ -350,7 +350,7 @@ export class LLMPlanAgent extends BaseAgent {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(180_000),
     });
 
     if (!resp.ok) {

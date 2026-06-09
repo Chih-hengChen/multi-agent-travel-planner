@@ -184,7 +184,7 @@ export class TravelPlanningPipeline {
     this.prefAgent = new PreferenceAgent(this.log);
 
     this.flightHotelExecutor = new PipelineExecutor([flightAgent, hotelAgent], this.log);
-    this.planExecutor = new PipelineExecutor([llmPlanAgent], this.log);
+    this.planExecutor = new PipelineExecutor([llmPlanAgent], this.log, 240_000);
     this.budgetLoop = new BudgetLoopController(this.flightHotelExecutor, this.planExecutor, budgetAgent, this.log);
   }
 
