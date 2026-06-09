@@ -10,8 +10,20 @@ import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { RagSource } from "../rag/rag-source.js";
 import { buildSystemPrompt, PROMPT_VERSION } from "./llm-plan-prompt.js";
 
+interface SavedPlanState {
+  messages: Array<{ role: string; content: unknown }>;
+  toolCallHistory: string[];
+  hasSearchedWeather: boolean;
+  hasSearchedAttractions: boolean;
+  hasSearchedDining: boolean;
+  hasSearchedXhs: boolean;
+  totalToolCalls: number;
+  round: number;
+}
+
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
+  private savedPlanState: SavedPlanState | null = null;
   constructor(log: Logger, dataSource: TravelDataSource) { super(log, dataSource); }
 
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
@@ -62,9 +74,36 @@ export class LLMPlanAgent extends BaseAgent {
     const MAX_CONTEXT_CHARS = 100_000;
     const MIN_TOOL_CALLS = 4;
     let totalToolCalls = 0;
+    let startRound = 0;
+
+    // Resume from saved state if retrying after timeout
+    if (this.savedPlanState) {
+      const s = this.savedPlanState;
+      messages = JSON.parse(JSON.stringify(s.messages));
+      hasSearchedWeather = s.hasSearchedWeather;
+      hasSearchedAttractions = s.hasSearchedAttractions;
+      hasSearchedDining = s.hasSearchedDining;
+      hasSearchedXhs = s.hasSearchedXhs;
+      totalToolCalls = s.totalToolCalls;
+      toolCallHistory.push(...s.toolCallHistory);
+      startRound = s.round;
+      this.savedPlanState = null;
+      this.log.info({ round: startRound, totalToolCalls }, "LLM plan: resumed from saved state");
+    }
 
     const maxRounds = 10;
-    for (let round = 0; round < maxRounds; round++) {
+    for (let round = startRound; round < maxRounds; round++) {
+      // Save snapshot at round start for timeout recovery
+      this.savedPlanState = {
+        messages: JSON.parse(JSON.stringify(messages)),
+        toolCallHistory: [...toolCallHistory],
+        hasSearchedWeather,
+        hasSearchedAttractions,
+        hasSearchedDining,
+        hasSearchedXhs,
+        totalToolCalls,
+        round,
+      };
       let currentState = "COMPILE";
       if (!hasSearchedWeather) currentState = "FETCH_WEATHER";
       else if (!hasSearchedAttractions) currentState = "SEARCH_ATTRACTIONS";
@@ -128,6 +167,7 @@ export class LLMPlanAgent extends BaseAgent {
         const totalCost = dayPlans.reduce((sum, d) => sum + d.dayCost, 0);
         state.activityResult = { dayPlans, totalActivityCost: totalCost };
         this.log.info({ agent: this.name, days: dayPlans.length, totalCost, toolCalls: totalToolCalls }, "LLM行程生成完成");
+        this.savedPlanState = null;
         return state;
       }
 
@@ -152,6 +192,7 @@ export class LLMPlanAgent extends BaseAgent {
     }
 
     this.log.warn({ agent: this.name }, "LLM plan agent exceeded max rounds, using fallback");
+    this.savedPlanState = null;
     return this.fallbackPlan(state, days, dest.city, pref);
   }
 
