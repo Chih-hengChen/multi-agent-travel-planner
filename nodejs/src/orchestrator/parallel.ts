@@ -125,13 +125,16 @@ export class PipelineExecutor {
       degraded: false,
     };
 
+    const snapshot = structuredClone(state);
+
     // Attempt 1: normal execution
     const first = await this.tryRun(agent, state, this.defaultTimeoutMs);
     if (first.success) return first;
 
-    // Attempt 2: retry with longer timeout
+    // Attempt 2: retry with longer timeout (restore snapshot first)
     if (first.timedOut && this.defaultMaxRetries > 0) {
-      this.log.warn({ agent: agent.name }, "首次超时，尝试重试（1.5x 超时）");
+      this.log.warn({ agent: agent.name }, "首次超时，恢复状态快照后重试（1.5x 超时）");
+      this.restoreState(state, snapshot);
       const retry = await this.tryRun(agent, state, this.defaultTimeoutMs * 1.5);
       retry.retried = true;
       if (retry.success) return retry;
@@ -148,6 +151,23 @@ export class PipelineExecutor {
     this.log.warn({ agent: agent.name, error: baseResult.error }, "Agent 降级执行");
 
     return baseResult;
+  }
+
+  private restoreState(target: TravelPlanState, snapshot: TravelPlanState): void {
+    target.state = snapshot.state;
+    target.preferences = snapshot.preferences;
+    target.destinationRec = snapshot.destinationRec;
+    target.flightResult = snapshot.flightResult;
+    target.hotelResult = snapshot.hotelResult;
+    target.activityResult = snapshot.activityResult;
+    target.budgetBreakdown = snapshot.budgetBreakdown;
+    target.adjustmentRound = snapshot.adjustmentRound;
+    target.maxAdjustments = snapshot.maxAdjustments;
+    target.errorMessages = [...snapshot.errorMessages];
+    target.searchConstraints = snapshot.searchConstraints;
+    target.transportMode = snapshot.transportMode;
+    target.trainOutbound = snapshot.trainOutbound;
+    target.trainReturn = snapshot.trainReturn;
   }
 
   private async tryRun(

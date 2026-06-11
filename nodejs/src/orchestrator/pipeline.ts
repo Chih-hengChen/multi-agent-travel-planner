@@ -208,6 +208,8 @@ export class TravelPlanningPipeline {
     }
     if (result.state === PlanningState.FAILED) return result;
 
+    await this.refreshSelectedPrices(result);
+
     const wrappedProgress: ProgressCallback = (update) => {
       if (update.status === "completed" || update.status === "degraded" || update.status === "failed") {
         tracker.add(update.agentName ?? update.phase);
@@ -260,6 +262,60 @@ export class TravelPlanningPipeline {
       !state.activityResult.dayPlans ||
       state.activityResult.dayPlans.length === 0
     );
+  }
+
+  private async refreshSelectedPrices(state: TravelPlanState): Promise<void> {
+    const pref = state.preferences;
+    if (!pref) return;
+    const THRESHOLD = 0.10;
+
+    const checks: Array<{ label: string; selected: { price: number }; key: string }> = [];
+    if (pref.selectedOutbound && "price" in pref.selectedOutbound) {
+      checks.push({ label: `去程 ${("flightNo" in pref.selectedOutbound ? pref.selectedOutbound.flightNo : "")}`, selected: pref.selectedOutbound as { price: number }, key: "selectedOutbound" });
+    }
+    if (pref.selectedReturn && "price" in pref.selectedReturn) {
+      checks.push({ label: `返程 ${("flightNo" in pref.selectedReturn ? pref.selectedReturn.flightNo : "")}`, selected: pref.selectedReturn as { price: number }, key: "selectedReturn" });
+    }
+
+    for (const { label, selected, key } of checks) {
+      try {
+        const fresh = await this.dataSource.searchFlights({
+          origin: (selected as Record<string, unknown>).departureCity as string,
+          destination: (selected as Record<string, unknown>).arrivalCity as string,
+          departureDate: ((selected as Record<string, unknown>).departureTime as string).slice(0, 10),
+          adults: pref.numTravelers,
+        });
+        const flightNo = (selected as Record<string, unknown>).flightNo;
+        const match = fresh.find(f => f.flightNo === flightNo);
+        if (match && Math.abs(match.price - selected.price) / selected.price > THRESHOLD) {
+          const dir = match.price > selected.price ? "+" : "";
+          state.priceWarnings.push(
+            `${label} 价格已从 ¥${selected.price} 变为 ¥${match.price} (${dir}${((match.price - selected.price) / selected.price * 100).toFixed(0)}%)`
+          );
+          (pref as Record<string, unknown>)[key] = match;
+        }
+      } catch { /* 校验失败不阻塞 pipeline */ }
+    }
+
+    if (pref.selectedHotel) {
+      try {
+        const fresh = await this.dataSource.searchHotels({
+          city: pref.destination,
+          checkIn: pref.startDate,
+          checkOut: pref.endDate,
+          adults: pref.numTravelers,
+        });
+        const hotelName = pref.selectedHotel.name;
+        const match = fresh.find(h => h.name === hotelName);
+        if (match && Math.abs(match.pricePerNight - pref.selectedHotel.pricePerNight) / pref.selectedHotel.pricePerNight > THRESHOLD) {
+          const dir = match.pricePerNight > pref.selectedHotel.pricePerNight ? "+" : "";
+          state.priceWarnings.push(
+            `酒店 ${hotelName} 价格已从 ¥${pref.selectedHotel.pricePerNight}/晚 变为 ¥${match.pricePerNight}/晚 (${dir}${((match.pricePerNight - pref.selectedHotel.pricePerNight) / pref.selectedHotel.pricePerNight * 100).toFixed(0)}%)`
+          );
+          pref.selectedHotel = match;
+        }
+      } catch { /* 校验失败不阻塞 pipeline */ }
+    }
   }
 }
 

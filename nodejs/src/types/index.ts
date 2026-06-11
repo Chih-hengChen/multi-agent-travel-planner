@@ -180,6 +180,17 @@ export const BudgetBreakdownSchema = z.object({
 });
 export type BudgetBreakdown = z.infer<typeof BudgetBreakdownSchema>;
 
+export interface LlmPlanCheckpoint {
+  messages: Array<{ role: string; content: unknown }>;
+  toolCallHistory: string[];
+  hasSearchedWeather: boolean;
+  hasSearchedAttractions: boolean;
+  hasSearchedDining: boolean;
+  hasSearchedXhs: boolean;
+  totalToolCalls: number;
+  round: number;
+}
+
 export class TravelPlanState {
   state: PlanningState = PlanningState.COLLECTING_PREFERENCES;
   preferences: UserPreferences | null = null;
@@ -195,6 +206,8 @@ export class TravelPlanState {
   transportMode: "flight" | "train" = "flight";
   trainOutbound: Train | null = null;
   trainReturn: Train | null = null;
+  llmPlanCheckpoint: LlmPlanCheckpoint | null = null;
+  priceWarnings: string[] = [];
 
   get selectedDestination(): Destination | null {
     return this.destinationRec?.selected ?? null;
