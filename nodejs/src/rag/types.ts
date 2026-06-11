@@ -7,6 +7,7 @@ export interface RagDocument {
     category: string;
     title: string;
     url?: string;
+    chunkType?: "section" | "code_block" | "table" | "paragraph";
   };
 }
 
@@ -27,4 +28,16 @@ export interface RagSourceStats {
   byCity: Record<string, number>;
   byCategory: Record<string, number>;
   bySource: Record<string, number>;
+}
+
+export interface Section {
+  content: string;
+  heading?: string;
+  atomic?: boolean;
+  lineNumber?: number;
+}
+
+export interface ChunkStrategy {
+  readonly name: string;
+  detectSections(text: string): Section[];
 }
