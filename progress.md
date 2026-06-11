@@ -99,14 +99,17 @@
   - Pipeline 中 LLMPlanAgent 降级时自动回退到 mock ActivityAgent
   - 新增日志事件：agent_retry / agent_degraded / recovery_action / pipeline_fallback
 
+### 面试暴露问题系统性修复 (2026-06-10)
+
+- `97650b3` feat: FileSessionStore — 文件持久化会话存储，原子写+TTL 扫描+乐观锁
+- `cbe4139` feat: Agent 重试状态隔离（structuredClone 快照恢复）+ Checkpoint 迁移到 state 级 + 价格漂移校验（10% 阈值）
+- `f99459d` feat: RAG 评估增强（50 条 query + NDCG@10 + Precision@5 + 按类别统计）+ 可插拔 Chunking 策略（TravelDocStrategy/TechDocStrategy）
+
 ## 下一步待办
 
 - 端到端测试：启动服务验证去程高铁返程飞机场景
 - 端到端测试：验证用户选择交通/酒店后 pipeline 正确使用选择项
-- 端到端测试：验证景点包含用户指定的故宫/颐和园等
-- 端到端测试：验证餐厅推荐为当地特色（北京→烤鸭/涮肉，成都→火锅/川菜）
-- 端到端测试：验证市内交通有起终点描述，短距离步行
-- 验证 session 日志：确认 logs/{sessionId}.jsonl 包含完整对话链路和 LLM prompt/response
+- RAG eval 跑一次基线，确认新指标落在合理区间
 
 ### Phase 1~5 演进架构实现 (2026-06-07)
 
@@ -184,3 +187,12 @@
   - 搜索结果为空时 LLM 自动解释并建议下一步
   - 兼容 OpenAI function_call 和 Anthropic tool_use 双格式
   - 单文件改动：turn-handler.ts (+159/-6)
+
+### LLM 工具调用强制 + 行程质量修复 (2026-06-09)
+
+- `e460ceb` fix: 强制 LLMPlanAgent 调工具收集信息，修复饮食推荐单一和缺少地铁细节问题
+  - MIN_TOOL_CALLS=4 强制阈值：LLM 至少调用 4 次工具才能生成行程
+  - prompt 强化 transit.description 必须注明线路号、站点、出入口
+  - prompt 要求必须调用 search_restaurants + search_xhs_notes 获取真实数据
+  - 新增搜索结果 rerank 机制（兴趣匹配 + 评分 + 名称特异性）
+  - 自检清单增加餐饮多样性、出行细节检查
