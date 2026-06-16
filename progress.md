@@ -196,3 +196,14 @@
   - prompt 要求必须调用 search_restaurants + search_xhs_notes 获取真实数据
   - 新增搜索结果 rerank 机制（兴趣匹配 + 评分 + 名称特异性）
   - 自检清单增加餐饮多样性、出行细节检查
+
+### 架构审计 + Bug 修复 + 文档同步 (2026-06-16)
+
+- `35490ff` fix: TravelPlanningPipeline.dataSource 未绑定到 this —— refreshSelectedPrices 运行时崩溃修复（局部 const 改为类字段）
+- `ee264fe` docs: src/ARCHITECTURE.md 同步实际状态
+  - 标注 ToolRegistry（tools/* + api/tools.ts 共 12 文件）当前为死代码，未被任何活路径调用
+  - 补 LLMPlanAgent 强制工具调用 + ReAct checkpoint 跨实例恢复
+  - 补 PipelineExecutor structuredClone 快照 + restoreState 重试语义
+  - 新增"价格漂移校验"小节（refreshSelectedPrices 10% 阈值）
+  - 新增"会话持久化"小节（Memory/File + 乐观锁 + 原子写）
+- 死代码处理方案待用户决策（选 C 暂时保留现状）
