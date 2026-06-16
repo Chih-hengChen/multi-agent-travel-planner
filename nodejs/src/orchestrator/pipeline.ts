@@ -163,12 +163,13 @@ export class TravelPlanningPipeline {
   private readonly planExecutor: PipelineExecutor;
   private readonly budgetLoop: BudgetLoopController;
   private readonly activityAgent: ActivityAgent;
+  private readonly dataSource: TravelDataSource;
   private readonly log: Logger;
 
   constructor(log?: Logger, public ragEnabled = true) {
     this.log = log ?? pino({ level: "info" });
     const webSearch = new WebSearchSource(this.log);
-    const dataSource = new CompositeDataSource(
+    this.dataSource = new CompositeDataSource(
       new FallbackDataSource(new AmadeusSource(), webSearch, this.log),
       new FallbackDataSource(new BookingSource(), webSearch, this.log),
       new FallbackDataSource(new AmapSource(), webSearch, this.log),
