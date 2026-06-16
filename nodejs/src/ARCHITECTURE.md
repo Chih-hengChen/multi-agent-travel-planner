@@ -290,6 +290,12 @@ LLMPlanAgent.execute()
 
 **上下文管理**: 超出 100K 字符时执行"头+摘要+尾"压缩。解析失败时 `fallbackPlanDays()` 返回硬编码模板行程。
 
+**强制工具调用** (`MIN_TOOL_CALLS = 4`):LLM 输出 text 但 `totalToolCalls < 4` 或 `hasKeyData`(attractions + dining + xhs)未齐时,Agent 会 push `【强制】检测到你未调用足够工具...` 的 user 消息逼 LLM 继续调工具,避免 LLM 凭空捏造行程。
+
+**Checkpoint 跨实例恢复**:每轮开始把 `{messages, toolCallHistory, hasSearched*, totalToolCalls, round}` 写入 `state.llmPlanCheckpoint`。`PipelineExecutor` 超时重试时会 `structuredClone(state)` 快照 + `restoreState()` 恢复,新 LLMPlanAgent 实例从 checkpoint 续行而非从零开始(避免超时累计放大)。
+
+**上限**:`maxRounds = 10`,超出走 `fallbackPlan`(mock 4 活动/天)。
+
 ### ActivityAgent（LLMPlanAgent 降级兜底）
 
 **只当 LLMPlanAgent 超时/失败时启用**。算法式规划：
@@ -323,9 +329,9 @@ else:
 
 使用 `LLM_LIGHT_MODEL` + `LLM_TEMPERATURE_CHAT(0.6)` 控制对话质量。
 
-## 工具注册表 (ToolRegistry)
+## 工具注册表 (ToolRegistry) — ⚠️ 当前为死代码
 
-**`src/tools/registry.ts`** — 唯一工具注册入口（旧 `src/api/tools.ts` 已移除）。
+**`src/tools/registry.ts`** + `tools/index.ts` + `tools/definitions/*.ts` + `api/tools.ts` 共同构成 ToolRegistry 体系(8 个工具):
 
 | 工具 | 说明 | 超时 |
 |------|------|------|
@@ -337,6 +343,8 @@ else:
 | `search_flights` | 航班查询 | - |
 | `search_hotels` | 酒店查询 | - |
 | `search_attractions` | 景点搜索 | - |
+
+> **现状(2026-06-16 审计)**:该体系目前**未被任何活路径调用**。`api/tools.ts` 创建了 `registry` 单例并 export `TOOLS` / `executeTool`,但 `stream-handler.ts` 和其他模块均未 import。当前对话+行程生成实际走的工具体系是 `LLMPlanAgent.buildToolDefs()` 内联定义的 5 工具(见下文 LLMPlanAgent 小节)。两套工具的 `search_attractions` / `search_xhs_notes` 存在 schema 漂移风险。**建议:删除 ToolRegistry 死代码,或恢复 chat 流对其的调用。**
 
 ## 状态机
 
@@ -396,6 +404,29 @@ const settled = await Promise.allSettled(
 
 **关键特性**: 每个 agent 独立超时(120s) → 重试(1.5x) → 降级。部分 agent 失败不阻塞整体 pipeline。
 
+**状态快照与恢复** (`runSingle`):
+1. 执行前 `structuredClone(state)` 拍快照
+2. 首次尝试失败(尤其是超时)→ `restoreState(state, snapshot)` 把 state 字段(7 个数据字段 + errorMessages + searchConstraints 等)逐字段拷回
+3. 以 1.5x 超时重试一次
+4. 仍失败 → 标记 `degraded = true` 但 `success = true`,让 pipeline 继续
+
+> 关键不变量:重试时 state 必须回到首次执行前的形态,否则 Agent 在脏数据上重试会放大错误。LLMPlanAgent 额外通过 `state.llmPlanCheckpoint` 续行 ReAct 循环。
+
+### 价格漂移校验 (refreshSelectedPrices)
+
+Pipeline 在 `enrichDestination` 之后、`budgetLoop` 之前调用 `refreshSelectedPrices(state)`,对用户已选的 `selectedOutbound / selectedReturn / selectedHotel` 重新查价:
+
+```
+对每个 selected 条目:
+  fresh = dataSource.searchFlights/searchHotels(...)
+  match = fresh.find(同航班号/同名酒店)
+  if |match.price - selected.price| / selected.price > 10%:
+      state.priceWarnings.push("去程 CA1234 价格已从 ¥800 变为 ¥950 (+19%)")
+      pref[key] = match   // 用最新价覆盖用户选择
+```
+
+> 目的:用户在 SELECTING_TRANSPORT/HOTEL 阶段选完后,到 Pipeline 真正执行可能间隔数十秒,期间数据源价格可能变化。>10% 漂移生成 warning 并更新价格,避免最终预算计算基于过期数据。校验失败不阻塞 pipeline(catch 吞错)。
+
 ### BudgetLoopController
 
 ```typescript
@@ -420,6 +451,24 @@ LLMPlanAgent 失败（超时/异常）
   → 降级到 ActivityAgent.run()（算法式规划）
   → ActivityAgent 也失败 → 记录错误，继续返回
 ```
+
+## 会话持久化 (SessionStore)
+
+`SessionStore` 接口 4 个方法:`get / set / delete / refreshTtl`。两种实现:
+
+| 实现 | 触发条件 | 存储 | 持久化语义 |
+|------|----------|------|-----------|
+| `MemorySessionStore` | `SESSION_STORE_TYPE=memory`(默认) | `Map<sid, {ctx, expiresAt}>` | 进程内,重启丢失 |
+| `FileSessionStore` | `SESSION_STORE_TYPE=file` | `data/sessions/{sid}.json` | 进程重启不丢失 |
+
+**共同机制**:
+- TTL 默认 2h(`SESSION_TTL_MS`),60s 扫描清理过期
+- `get()` 返回 `structuredClone(ctx)`,防止调用方污染存储内 ctx
+- **乐观锁**:每次 `set` 时校验 `current.version === ctx.version - 1`,不匹配抛 `VersionConflictError`。`version` 由 `ConversationOrchestrator` 自增。
+
+**FileSessionStore 原子写**:`writeFileSync(tmpPath)` → `renameSync(tmpPath, filePath)`,避免半写状态被读到。`sweep()` 扫描目录中所有 `.json`,过期文件 `unlinkSync`,损坏文件静默跳过。
+
+**ConversationContext 字段**:sessionId / state / version / createdAt / updatedAt / messageHistory / turnCount,加业务字段(destination / departureCity / startDate / endDate / numTravelers / budget / transportSearchResult / hotelOptions / selectedOutboundId / selectedReturnId / selectedHotel / planSummary / editedPlanSummary / lastError 等)。
 
 ## RAG 旅行攻略检索
 
