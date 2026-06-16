@@ -18,7 +18,7 @@
 - [ ] 主动优化
 
 **变更内容**:
-- 文件:`prompts/versions/system-v{N}.md` → `system-v{N+1}.md`
+- 文件:`docs/prompt-versions/system-v{N}.md` → `system-v{N+1}.md`(路径与 redesign v2 §4.4 对齐)
 - diff 摘要:[1-2 句描述改了什么]
 
 **变更动机**:[为什么相信这个改动有效]
@@ -28,9 +28,13 @@
 |------|-----------|------------|---|
 | 自评均分(50 case) | ? | ? | ? |
 | 用户评分均分 | ? | ? | ? |
-| JSON 解析失败率 | ?% | ?% | ? |
+| 行程完整度(dayPlans 覆盖率) | ?% | ?% | ? |
+| 餐厅多样性分(本地特色比例) | ?% | ?% | ? |
+| 预算偏差率(实际/预算) | ?% | ?% | ? |
 | 平均工具调用次数 | ? | ? | ? |
 | 平均 latency | ?ms | ?ms | ? |
+
+> 注:JSON 解析失败率不应在此表 — 它由 `jsonrepair` + Zod 兜底,与 system prompt 无关,放在 P1-A 验收。
 
 **决策**:[adopt / reject / iterate]
 - adopt → v{N+1} 转 main,`prompts/system.md` 指向 v{N+1}

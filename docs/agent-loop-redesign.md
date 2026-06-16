@@ -108,7 +108,7 @@ ConversationOrchestrator.handleMessage
 interface AgentState {
   phase: "gathering" | "searching" | "selecting" | "planning" | "completed";
   iteration: number;
-  budgetRound: number;  // 预算循环计数(planning 内自增)
+  budgetRound: number;  // 预算循环计数,increment 时机见 p0-a-contracts §1.4
 
   // 用户偏好(gathering 阶段填充)
   preferences?: UserPreferences;
