@@ -55,7 +55,7 @@ src/
 ├── intent-router/          # 意图分类 + RouteDecision
 ├── step-executor/          # 统一 AgentStep 生命周期
 ├── trace-recorder/         # 结构化 TraceEvent
-├── tools/                  # 工具注册表 (8 工具)
+├── tools/                  # ⚠️ 工具注册表 (8 工具,死代码 — 详见 src/ARCHITECTURE.md)
 ├── types/                  # 核心类型定义
 ├── api/                    # Fastify HTTP 路由 + SSE
 ├── config/settings.ts      # 分层配置（LLM/Session/RAG/Cache）
@@ -76,6 +76,8 @@ src/
 ### LLMPlanAgent Checkpoint
 - ReAct 循环状态（messages、tool 历史、搜索标志）存于 `state.llmPlanCheckpoint`
 - 跨实例恢复：PipelineExecutor 重试创建新 LLMPlanAgent 时从 state 读取 checkpoint
+- `MIN_TOOL_CALLS=4` 强制阈值：toolCalls<4 或 hasKeyData(attractions+dining+xhs) 未齐时 push 强制消息,逼 LLM 继续调工具避免凭空捏造行程
+- 上限 10 轮,超出走 `fallbackPlan`(mock 4 活动/天)
 
 ### 价格漂移校验
 - `refreshSelectedPrices()` 在 enrichDestination 之后、budgetLoop 之前执行
