@@ -148,7 +148,7 @@ function validateToolCalls(
     // 1. Phase gating
     if (!isToolAllowedInPhase(call.name, state.phase)) {
       rejected.push({ call, code: "PHASE_NOT_ALLOWED",
-        reason: `${call.name} 在 ${state.phase} 阶段不可用。可用工具:${listToolsForPhase(state.phase).join(", ")}` });
+        reason: `${call.name} 在 ${state.phase} 阶段不可用。可用工具:${listToolsForPhase(state.phase).map(t => t.name).join(", ")}` });
       continue;
     }
 
@@ -170,9 +170,25 @@ function validateToolCalls(
     }
     seen.add(dedupKey);
 
-    // 4. 前置 state
+// —— stableHash 实现(确定性序列化,key 排序后 stringify)——
+function stableHash(obj: unknown): string {
+  return JSON.stringify(obj, (_key, value) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, k) => {
+          acc[k] = (value as Record<string, unknown>)[k];
+          return acc;
+        }, {});
+    }
+    return value;
+  });
+}
+// 备选:npm i fast-json-stable-stringify(成熟方案,benchmark 更快)
+
+    // 4. 前置 state(check 接收 call 以支持参数化前置条件)
     const precond = PRECONDITIONS[call.name];
-    if (precond && !precond.check(state)) {
+    if (precond && !precond.check(call, state)) {
       rejected.push({ call, code: "PRECONDITION_MISSING",
         reason: `${call.name} 要求前置条件不满足:${precond.desc}` });
       continue;
@@ -184,20 +200,25 @@ function validateToolCalls(
   return { approved, rejected };
 }
 
-const PRECONDITIONS: Record<string, { check: (s: AgentState) => boolean; desc: string }> = {
+// PRECONDITIONS.check 接收 (call, state),支持基于 input.scope 等参数的细粒度检查
+const PRECONDITIONS: Record<string, { check: (call: ToolCall, s: AgentState) => boolean; desc: string }> = {
   select_transport: {
-    check: s => (s.candidateTransports?.length ?? 0) > 0,
+    check: (_c, s) => (s.candidateTransports?.length ?? 0) > 0,
     desc: "candidateTransports 不为空",
   },
   select_hotel: {
-    check: s => (s.candidateHotels?.length ?? 0) > 0,
+    check: (_c, s) => (s.candidateHotels?.length ?? 0) > 0,
     desc: "candidateHotels 不为空",
   },
   finalize_plan: {
-    check: s => Boolean(s.selectedOutbound && s.selectedReturn && s.selectedHotel),
+    check: (_c, s) => Boolean(s.selectedOutbound && s.selectedReturn && s.selectedHotel),
     desc: "selectedOutbound + selectedReturn + selectedHotel 都已选",
   },
-  // search_restaurants(scope=attraction) 要求 candidateAttractions 非空(planning 阶段)
+  search_restaurants: {
+    // scope=attraction 要求 candidateAttractions 非空;scope=city 不要求
+    check: (c, s) => c.input.scope !== "attraction" || (s.candidateAttractions?.length ?? 0) > 0,
+    desc: "scope=attraction 时 candidateAttractions 不为空",
+  },
 };
 ```
 
@@ -275,6 +296,23 @@ function applyFinalizePlan(state: AgentState, result: FinalizeResult): AgentStat
 - phase 回退到 "planning" + 在 messages 注入 budget feedback,LLM 拿到具体差额后调整
 - 超过 MAX_BUDGET_ROUNDS(默认 3)→ 强制交付
 
+**AgentState 必须新增 transient 字段**(redesign v2 §3.1 同步更新):
+```ts
+interface AgentState {
+  // ... 其他字段
+  _pendingBudgetFeedback?: string;  // transient,只活在两个 iter 之间
+}
+```
+
+**Agent Loop 主循环开头必须消费**:
+```ts
+// agent-loop.ts,每个 iter 开头(after for, before pickModel)
+if (state._pendingBudgetFeedback) {
+  messages.push({ role: "user", content: state._pendingBudgetFeedback });
+  state = { ...state, _pendingBudgetFeedback: undefined };
+}
+```
+
 #### reducer 实现
 
 ```ts
@@ -310,11 +348,61 @@ const TOOL_EFFECT_HANDLERS: Record<string, (s: AgentState, data: any) => AgentSt
                                           ? appendCandidates(s, "candidateRestaurants", d.items, d.scores)
                                           : appendPlanningRestaurants(s, d.near, d.items, d.scores),
   search_xhs:                (s, d) => mergeXhsNotes(s, d.notes),
+  search_travel_guides:      (s, _d) => s,  // RAG 结果直接作为 tool_result 回传,不写 state
   select_transport:          (s, d) => ({ ...s, selectedOutbound: d.outbound, selectedReturn: d.return }),
   select_hotel:              (s, d) => ({ ...s, selectedHotel: d.hotel }),
   plan_transit:              (s, d) => appendTransit(s, d.dayIdx, d.transit),
   finalize_plan:             (s, d) => applyFinalizePlan(s, d),
 };
+
+// —— Helper implementations ——
+
+function appendCandidates<K extends keyof AgentState>(
+  state: AgentState,
+  field: K,
+  items: Activity[],
+  scores: Record<string, number>,
+): AgentState {
+  const existing = (state[field] as Activity[] | undefined) ?? [];
+  const seen = new Set(existing.map(x => x.name));
+  const fresh = items.filter(x => !seen.has(x.name));
+  return {
+    ...state,
+    [field]: [...existing, ...fresh],
+    rerankScores: { ...state.rerankScores, ...pickScores(scores, fresh) },
+  };
+}
+
+function appendPlanningRestaurants(
+  state: AgentState,
+  near: string,
+  items: Activity[],
+  scores: Record<string, number>,
+): AgentState {
+  // planningRestaurants 类型:Record<string, Activity[]> —— 按景点名分组
+  // (redesign v2 §3.1 的 planningRestaurants?: Activity[] 要改成 Record<string, Activity[]>)
+  const existing = state.planningRestaurants ?? {};
+  const prior = existing[near] ?? [];
+  const seen = new Set(prior.map(x => x.name));
+  const fresh = items.filter(x => !seen.has(x.name));
+
+  return {
+    ...state,
+    planningRestaurants: {
+      ...existing,
+      [near]: [...prior, ...fresh],
+    },
+    rerankScores: { ...state.rerankScores, ...pickScores(scores, fresh) },
+  };
+}
+
+function pickScores(scores: Record<string, number>, items: Activity[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const item of items) {
+    if (scores[item.name] !== undefined) out[item.name] = scores[item.name];
+  }
+  return out;
+}
 ```
 
 ### 1.5 buildSystemPrompt
@@ -617,7 +705,8 @@ const TransitSegmentSchema = z.object({
   mode: z.enum(["transit", "walking", "driving", "rideshare"]),
   durationMin: z.number().positive(),
   distanceKm: z.number().nonnegative(),
-  cost: z.string(),
+  cost: z.string(),                        // 展示用:"¥4" / "未知"
+  costAmount: z.number().nonnegative(),    // 数值汇总用:-1 表示未知(budget 计算 skip)
   steps: z.array(z.string()),
   fallbackLevel: z.union([z.literal(0), z.literal(1), z.literal(2)]),
 });
@@ -1081,3 +1170,103 @@ Commit:`feat(runtime): e2e integration test + index barrel`
 - [ ] 测试框架 vitest 已配置(P0-A 9 步都要 TDD)
 
 review 通过后,开 `feat/p0-a-agent-loop` 分支,从 §7 Step 1 开始。
+
+---
+
+## 9. 实施期注意点(编码中修,不阻塞开工)
+
+这些是 v3 review 提出的优化点,不影响 P0-A 启动,但实施对应 Step 时必须落地。
+
+### 9.1 canFinish 的 CONTINUE_SIGNALS 误杀风险(Step 1)
+
+§1.1 的 `canFinish` 函数已经在最开始 `if (state.phase !== "completed") return false`,所以后续对 `lastThought` 检查 CONTINUE_SIGNALS 只会在 completed 阶段生效。但 completed 阶段 LLM 写 "继续调 finalize_plan 交付" 会被误杀。
+
+**修法**:把 CONTINUE_SIGNALS 检查从 `canFinish` 移到 `maybeAdvancePhase`(planning → completed 转换条件),`canFinish` 删除该段:
+
+```ts
+function canFinish(state: AgentState, _resp: LLMResponse): boolean {
+  if (state.phase !== "completed") return false;
+  const travelDays = computeTravelDays(state.preferences!);
+  if (state.dayPlans?.length !== travelDays) return false;
+  if (!state.budgetBreakdown) return false;
+  return true;  // completed 阶段不再检查 thought signals
+}
+
+function maybeAdvancePhase(state: AgentState): AgentState {
+  if (state.phase === "planning" && state.dayPlans && state.budgetBreakdown?.isWithinBudget) {
+    // 防 LLM 草率收尾:thought 含"继续/待补/TODO"等信号 → 不转 completed
+    const CONTINUE_SIGNALS = ["还需要", "继续", "待补", "TODO"];
+    if (state.lastThought && CONTINUE_SIGNALS.some(s => state.lastThought!.includes(s))) {
+      return state;  // 留在 planning,等下轮继续
+    }
+    return { ...state, phase: "completed" };
+  }
+  // ... 其他转换
+}
+```
+
+### 9.2 stateSummary 函数实现(Step 8)
+
+§1.5 `buildSystemPrompt` 注入了 `stateSummary(state)` 但未定义。Step 8 实现 `system-prompt.ts` 时必须落地 minimal 版:
+
+```ts
+function stateSummary(state: AgentState): string {
+  const lines: string[] = [];
+  if (state.preferences) {
+    const p = state.preferences;
+    lines.push(`目的地:${p.destination ?? "(待填)"}, 出发地:${p.departureCity ?? "(待填)"}`);
+    lines.push(`日期:${p.startDate ?? "?"} ~ ${p.endDate ?? "?"}, 人数:${p.numTravelers ?? "?"}, 预算:¥${p.budget ?? "?"}`);
+  }
+  if (state.baikeKnowledge) lines.push(`百科:已知`);
+  if (state.candidateAttractions?.length) lines.push(`候选景点:${state.candidateAttractions.length} 个`);
+  if (state.candidateHotels?.length) lines.push(`候选酒店:${state.candidateHotels.length} 家`);
+  if (state.candidateRestaurants?.length) lines.push(`候选餐厅(城市级):${state.candidateRestaurants.length} 家`);
+  if (state.xhsNotes?.length) lines.push(`XHS 笔记:${state.xhsNotes.length} 篇`);
+  if (state.selectedOutbound) lines.push(`已选去程:${state.selectedOutbound.flightNo ?? state.selectedOutbound.trainNo}`);
+  if (state.selectedReturn) lines.push(`已选返程:${state.selectedReturn.flightNo ?? state.selectedReturn.trainNo}`);
+  if (state.selectedHotel) lines.push(`已选酒店:${state.selectedHotel.name}`);
+  if (state.dayPlans?.length) lines.push(`已编排:${state.dayPlans.length} 天`);
+  if (state.budgetBreakdown) lines.push(`预算:${state.budgetBreakdown.totalCost}/${state.budgetBreakdown.budgetLimit}(${state.budgetBreakdown.isWithinBudget ? "内" : "超"})`);
+  if (state.budgetRound > 0) lines.push(`budgetRound:${state.budgetRound}`);
+  if (state.errorMessages.length) lines.push(`错误:${state.errorMessages.length} 条`);
+  return lines.join("\n") || "(state 为空)";
+}
+```
+
+每行 ≤80 字符,LLM 容易扫读。
+
+### 9.3 plan_transit 境外 geocode 处理(Step 7)
+
+§2.1 `plan_transit` 实现假设 `geocode(浅草寺)` 能解析境外 POI,但高德国内版 key 不覆盖日本景点。
+
+**修法**:Step 7 实现时,优先从 `state.candidateAttractions` / `state.selectedHotel` 按名查坐标,geocode 作为 fallback:
+
+```ts
+async execute(input, ctx) {
+  // L0a: 先从 state 已有数据按名查坐标(零成本,覆盖境外)
+  const start = findCoordsByName(input.from, ctx.state)
+             ?? (await geocode(input.from, amapKey));
+  const end = findCoordsByName(input.to, ctx.state)
+           ?? (await geocode(input.to, amapKey));
+
+  if (!start || !end) {
+    // L1: 都找不到 → Haversine 估算(用 city center 兜底)
+    return haversineEstimate(input, ctx.state);
+  }
+  // ... 走 amap direction API(L0)
+}
+
+function findCoordsByName(name: string, state: AgentState): { lat: number; lng: number } | undefined {
+  const attractions = state.candidateAttractions ?? [];
+  const planningRestaurants = Object.values(state.planningRestaurants ?? {}).flat();
+  const hotels = state.candidateHotels ?? [];
+  const candidates = [...attractions, ...planningRestaurants, ...hotels];
+  const found = candidates.find(a => a.name === name || a.name.includes(name) || name.includes(a.name));
+  return found?.location;
+}
+```
+
+**好处**:
+- 境外景点(东京/巴黎/纽约)用 candidate 里已有坐标,零 geocode 调用
+- 高德 API 只用于已有坐标之间的路径规划(国内 + 国外都能返回 transit 方案)
+- 省 QPS(高德限流 3/s,planning 阶段一天多 plan_transit 容易打满)
