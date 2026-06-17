@@ -4,6 +4,7 @@ import type { TransportOption } from "../conversation/context.js";
 export type Phase = "gathering" | "searching" | "selecting" | "planning" | "completed";
 
 export const MAX_BUDGET_ROUNDS = 3;
+export const UNKNOWN_COST_AMOUNT = -1;
 const CONTINUE_SIGNALS = ["还需要", "继续", "待补", "TODO", "下一步"];
 
 export interface WeatherSummary {
@@ -186,8 +187,9 @@ export function maybeAdvancePhase(state: AgentState): AgentState {
 
 export function canFinish(state: AgentState): boolean {
   if (state.phase !== "completed") return false;
+  if (!state.preferences) return false;
 
-  const travelDays = state.preferences ? computeTravelDays(state.preferences) : 0;
+  const travelDays = computeTravelDays(state.preferences);
   if ((state.dayPlans?.length ?? 0) !== travelDays) return false;
   if (!state.budgetBreakdown) return false;
 

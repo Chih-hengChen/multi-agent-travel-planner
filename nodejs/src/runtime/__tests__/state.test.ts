@@ -299,6 +299,14 @@ describe("canFinish", () => {
   it("returns false when phase completed but dayPlans empty + no budget", () => {
     expect(canFinish({ ...baseCompleted, dayPlans: undefined, budgetBreakdown: undefined })).toBe(false);
   });
+
+  it("returns false when preferences undefined + dayPlans empty even if budget exists (regression)", () => {
+    expect(canFinish({
+      ...baseCompleted,
+      preferences: undefined,
+      dayPlans: undefined,
+    })).toBe(false);
+  });
 });
 
 describe("getMissingRequirements", () => {
