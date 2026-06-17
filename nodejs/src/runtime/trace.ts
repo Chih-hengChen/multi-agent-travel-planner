@@ -39,7 +39,7 @@ export interface ToolExecTraceEvent {
   type: "tool_exec";
   tool: string;
   durationMs: number;
-  fallbackLevel: 0 | 1 | 2;
+  fallbackLevel: number;
   resultSummary?: unknown;
   amapWaitMs?: number;
 }

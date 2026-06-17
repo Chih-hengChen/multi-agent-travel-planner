@@ -83,6 +83,10 @@ const TOOL_PHASE_POLICY: Record<ToolName, ToolPhasePolicyEntry> = {
   },
 };
 
+// Array index = fallback level (0 = primary source, 1 = first fallback, ...).
+// ToolExecTraceEvent.fallbackLevel records the actual index used per call.
+// Note: search_restaurants is the only tool with 4 entries (Level 3 = rag_travel_guides);
+// TransitSegment.fallbackLevel in state.ts is independently typed 0 | 1 | 2 because plan_transit only has 2 fallbacks.
 export const TOOL_FALLBACK_CHAIN: Record<ToolName, string[]> = {
   collect_preferences: [],
   search_baike:         ["baike_api", "web_search_baidu", "llm_generated"],
