@@ -39,7 +39,7 @@ export interface ToolExecTraceEvent {
   type: "tool_exec";
   tool: string;
   durationMs: number;
-  fallbackLevel: number;
+  fallbackLevel: 0 | 1 | 2;
   resultSummary?: unknown;
   amapWaitMs?: number;
 }
@@ -90,10 +90,13 @@ export type TraceEvent =
   | HeartbeatTraceEvent
   | ErrorTraceEvent;
 
+const createdDirs = new Set<string>();
+
 let traceDir = "data/trace";
 
 export function setTraceDir(dir: string): void {
   traceDir = dir;
+  createdDirs.clear();
 }
 
 export function getTraceDir(): string {
@@ -105,9 +108,17 @@ export function traceFilePath(sid: string): string {
 }
 
 export function trace(event: TraceEvent): void {
-  const fullPath = traceFilePath(event.sid);
-  mkdirSync(dirname(fullPath), { recursive: true });
-  appendFileSync(fullPath, JSON.stringify(event) + "\n", "utf8");
+  try {
+    const fullPath = traceFilePath(event.sid);
+    const dir = dirname(fullPath);
+    if (!createdDirs.has(dir)) {
+      mkdirSync(dir, { recursive: true });
+      createdDirs.add(dir);
+    }
+    appendFileSync(fullPath, JSON.stringify(event) + "\n", "utf8");
+  } catch (err) {
+    console.error("[trace] write failed:", (err as Error).message);
+  }
 }
 
 export function makeTraceEvent<E extends TraceEvent>(

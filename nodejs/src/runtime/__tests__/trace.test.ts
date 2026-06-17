@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -163,6 +163,17 @@ describe("trace file writing", () => {
       "llm_request", "llm_response", "tool_exec",
       "state_change", "phase_change", "heartbeat", "error",
     ]);
+  });
+
+  it("silently swallows write errors (does not throw, agent stays alive)", () => {
+    const blockerPath = join(tmpDir, "blocker-file");
+    writeFileSync(blockerPath, "i-am-a-file-not-a-dir");
+    setTraceDir(blockerPath);
+
+    const silence = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => traceNow("sid-err", 0, { type: "heartbeat" })).not.toThrow();
+    expect(silence).toHaveBeenCalled();
+    silence.mockRestore();
   });
 });
 
