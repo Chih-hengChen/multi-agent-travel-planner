@@ -66,3 +66,8 @@ export {
   type ToolResultLike,
   type StateReducer,
 } from "./apply-tool-effects.js";
+
+export {
+  createSSEBridge,
+  type ForwardingSSEEmitter,
+} from "./sse.js";
