@@ -1,8 +1,9 @@
 # Agent Loop Redesign (v2)
 
 > v1 立项:2026-06-16
-> v2 修订:2026-06-16,接受 review,补 ReAct 落地 / 餐厅两阶段 / XHS 渐进抓取 / State immutable / 降级链表 / optimization-log 等
-> 状态:Ready for execution
+> v2 修订:2026-06-16,接受 review
+> P0-A 落地:2026-06-18 (`feat/p0-a-agent-loop` 分支,9步全部完成)
+> 状态:P0-A 已完成,待开 P0-B/P0-C
 > 决策日志:
 > - Q1=A(代码控制 Loop) / Q2=单 Loop / Q3=两级模型 / Q4=B+C / Q5=先扩 eval set
 > - ReAct 落地 = `<thought>` 标签(方案 A)
@@ -693,11 +694,19 @@ trace-viewer 显示 `fallback_level`,复盘时一眼看出"今天 30% 的 search
 
 ### P0 — 框架
 
-**P0-A:Agent Loop 主框架**(5-7 天)
-- `src/runtime/agent-loop.ts`(主循环)
-- `src/runtime/state.ts`(AgentState + phase 转换)
-- `src/runtime/trace.ts`(结构化 trace + thought 解析)
-- `src/tools/policy.ts`(phase gating + 降级链表 + QPS 限流)
+**P0-A:Agent Loop 主框架** ✅ 2026-06-18 完成(9 commits)
+- `src/runtime/agent-loop.ts` — 主循环 + ReAct thought 解析
+- `src/runtime/state.ts` — AgentState + phase 转换 + canFinish
+- `src/runtime/trace.ts` — 结构化 trace + jsonl 写入
+- `src/runtime/apply-tool-effects.ts` — immutable state reducer + 13 handlers
+- `src/runtime/validate-tool-calls.ts` — 4 类校验(phase/schema/dedup/precondition)
+- `src/runtime/system-prompt.ts` — BASE + 5 phase prompts + state 摘要
+- `src/tools/policy.ts` — phase gating + 降级链表 + QPS 限流(TokenBucket)
+- `src/tools/definitions/plan-schema.ts` — Zod 行程 JSON schema + parsePlanLoose
+- `src/tools/definitions/plan-transit.ts` — 市内交通(高德路径规划 + Haversine 降级)
+- `src/tools/definitions/finalize-plan.ts` — 行程交付 + computeBudgetBreakdown
+- `src/runtime/index.ts` — barrel export
+- 单元测试 216 条覆盖(7 runtime 文件 + 2 tools 文件)
 
 **P0-B:工具系统重做**(5-6 天,因加餐厅两阶段 + hotel geoConstraint)
 - 迁 LLMPlanAgent 内联 5 工具到 `tools/definitions/`
@@ -785,13 +794,13 @@ xhs-service 用 curl_cffi 伪装 TLS 指纹,但 XHS 可能升级反爬。
 ## 8. 验收标准
 
 **P0 完成后**:
-1. "下周去东京 5 天,预算 1.5 万" → 弹偏好 → 自动进 searching
-2. searching 阶段 LLM 并行调 ≥3 工具(baike + xhs + attractions + hotels)
-3. 每轮 LLM 输出含 `<thought>` 块,trace 可见
-4. selecting 推送交通+酒店选项(酒店有 geoConstraint 过滤)
-5. planning 调 finalize_plan,Zod 校验通过,JSON maxRetries=3 兜底
-6. trace 写 jsonl,trace-viewer 三栏 HTML 可读
-7. 全程 immutable state,loop 末尾 `ctx.agentState = state`
+1. ⚡ 代码层面:Agent Loop 驱动 + 5 phase 门控(preferences/transport+hotel/selection/dayPlans+budget)
+2. ✅ searching 阶段 LLM 可并行调 ≥3 工具(baike / xhs / attractions / hotels 等)
+3. ✅ 每轮 LLM 输出含 `<thought>` 块,`parseThought` 解析写入 `state.lastThought`,trace 可见
+4. ⏳ selecting 需真实 LLM 接入后验证(当前 mock 验证了 select_transport + select_hotel 工具)
+5. ✅ planning 调 finalize_plan,Zod 校验通过,parsePlanLoose 三层防御(maxRetries=3)
+6. ✅ trace 写 jsonl(7 种事件类型),trace-viewer 三栏 HTML 待 P2-A
+7. ✅ 全程 immutable state,loop 末尾 `ctx.agentState = state`
 
 **P1 完成后**:
 8. eval set ≥ 100 条,RAG Hit Rate 报告产出(见 RAG plan)
@@ -813,17 +822,20 @@ xhs-service 用 curl_cffi 伪装 TLS 指纹,但 XHS 可能升级反爬。
 
 ## 9. 下一步
 
-v2 已锁定。直接开 **P0-A:Agent Loop 主框架**。
+P0-A 已于 2026-06-18 完成(`feat/p0-a-agent-loop` 分支,9步,216 测试通过)。
 
-P0-A 产出:
-- `src/runtime/agent-loop.ts` 骨架(主循环 + thought 解析)
-- `src/runtime/state.ts`(AgentState + phase 转换函数)
-- `src/runtime/trace.ts`(trace 写入 + schema)
-- `src/tools/policy.ts`(phase gating + 降级链 + QPS 限流)
-- 单元测试(state 转换、thought 解析、JSON 修复)
-- `docs/p0-a-step-plan.md`(详细 step plan,执行前再 review)
+**建议下一步:P0-B(工具系统重做)**:
+- 迁 LLMPlanAgent 内联 5 工具到 `tools/definitions/`
+- 删 `api/tools.ts`(死代码)
+- 新增工具:search_baike / select_transport / select_hotel
+- 餐厅两阶段实现(scope 参数)
+- search_hotels geoConstraint
+- search_xhs 渐进抓取(默认 30,不够 +30)
 
-预计 5-7 天。
+**P0-C(对话流接入)**:
+- TurnHandler → 委托 Agent Loop
+- 保留 ConversationOrchestrator(HTTP/SSE 桥)
+- 删旧 Pipeline / BudgetLoopController
 
 ---
 
