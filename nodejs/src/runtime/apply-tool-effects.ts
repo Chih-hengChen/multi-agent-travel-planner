@@ -1,4 +1,4 @@
-import type { Activity, Hotel, UserPreferences } from "../types/index.js";
+import type { Activity, UserPreferences } from "../types/index.js";
 import type {
   AgentState,
   PlanDayPlan,
@@ -155,17 +155,20 @@ export const TOOL_EFFECT_HANDLERS: Record<string, StateReducer> = {
 export function applyToolEffects(state: AgentState, results: ToolResultLike[]): AgentState {
   let next = state;
   for (const result of results) {
+    if (result.fallbackLevel && result.fallbackLevel > 0) {
+      next = {
+        ...next,
+        fallbackUsage: {
+          ...next.fallbackUsage,
+          [result.toolName]: (next.fallbackUsage[result.toolName] ?? 0) + 1,
+        },
+      };
+    }
+
     if (!result.success) {
-      const fallbackUsage = result.fallbackLevel && result.fallbackLevel > 0
-        ? {
-            ...next.fallbackUsage,
-            [result.toolName]: (next.fallbackUsage[result.toolName] ?? 0) + 1,
-          }
-        : next.fallbackUsage;
       next = {
         ...next,
         toolErrors: { ...next.toolErrors, [result.toolName]: result.error ?? "unknown" },
-        fallbackUsage,
       };
       continue;
     }

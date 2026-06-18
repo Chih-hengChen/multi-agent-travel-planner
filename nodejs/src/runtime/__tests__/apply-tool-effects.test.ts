@@ -369,6 +369,17 @@ describe("applyToolEffects (main reducer)", () => {
     expect(next.fallbackUsage["search_xhs"]).toBeUndefined();
   });
 
+  it("increments fallbackUsage even on successful fallback (L2 success recorded)", () => {
+    const state = makeState();
+    const results: ToolResultLike[] = [
+      { toolName: "search_xhs", success: true, fallbackLevel: 2, data: { notes: [makeNote("n1")] } },
+    ];
+    const next = applyToolEffects(state, results);
+    expect(next.fallbackUsage["search_xhs"]).toBe(1);
+    expect(next.xhsNotes?.map(n => n.noteId)).toEqual(["n1"]);
+    expect(next.toolErrors["search_xhs"]).toBeUndefined();
+  });
+
   it("unknown toolName (no handler) is silently ignored", () => {
     const state = makeState();
     const results: ToolResultLike[] = [
