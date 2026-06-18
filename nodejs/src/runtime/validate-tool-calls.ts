@@ -12,8 +12,7 @@ export type ValidationCode =
   | "PHASE_NOT_ALLOWED"
   | "SCHEMA_INVALID"
   | "DUPLICATE_CALL"
-  | "PRECONDITION_MISSING"
-  | "QPS_THROTTLED";
+  | "PRECONDITION_MISSING";
 
 export interface RejectedCall {
   call: ToolCall;
@@ -115,7 +114,6 @@ export function validateToolCalls(
       });
       continue;
     }
-    seen.add(dedupKey);
 
     const precond = PRECONDITIONS[call.name];
     if (precond && !precond.check(call, state)) {
@@ -127,6 +125,7 @@ export function validateToolCalls(
       continue;
     }
 
+    seen.add(dedupKey);
     approved.push(call);
   }
 

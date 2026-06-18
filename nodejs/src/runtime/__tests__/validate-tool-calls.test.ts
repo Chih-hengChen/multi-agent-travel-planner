@@ -300,6 +300,26 @@ describe("validateToolCalls - mixed batches", () => {
     );
     expect(result.approved[0].id).toBe("tool_use_abc");
   });
+
+  it("same precondition-failing call returns PRECONDITION_MISSING both times (not DUPLICATE)", () => {
+    const state = makeState({
+      phase: "planning",
+      selectedOutbound: { id: "X" } as any,
+      selectedReturn: { id: "Y" } as any,
+    });
+    const result = validateToolCalls(
+      [
+        { name: "finalize_plan", input: { rawJson: "{}" } },
+        { name: "finalize_plan", input: { rawJson: "{}" } },
+      ],
+      state,
+      emptySchemaLookup(),
+    );
+    expect(result.approved).toHaveLength(0);
+    expect(result.rejected).toHaveLength(2);
+    expect(result.rejected[0].code).toBe("PRECONDITION_MISSING");
+    expect(result.rejected[1].code).toBe("PRECONDITION_MISSING");
+  });
 });
 
 describe("PRECONDITIONS table", () => {
