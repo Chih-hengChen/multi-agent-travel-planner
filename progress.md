@@ -2,6 +2,13 @@
 
 ## 已完成
 
+### P0-A Step 7: plan_transit + finalize_plan 工具 (2026-06-18)
+- `18ec7cb` feat(tools): plan_transit + finalize_plan with JSON schema
+  - 新增 `plan-schema.ts`: 完整 Zod 行程 JSON schema + `parsePlanLoose` 三层防御（brace-balanced 提取 + JSON.parse + simpleRepair）
+  - 新增 `plan-transit.ts`: 市内交通规划 —— state 已有坐标优先 → 高德地理编码 → 高德路径规划 → Haversine 估算降级
+  - 新增 `finalize-plan.ts`: 行程交付 —— parsePlanLoose + `computeBudgetBreakdown` 预算分类汇总
+  - 新增 `plan-schema.test.ts`: Zod 校验 + parsePlanLoose 修复覆盖率 100% (18/18)
+
 ### Agent Loop 架构重写 (2026-05-31)
 
 - `ba81715` feat: LLM agent loop — collect_preferences 工具 + SSE 事件流 + 前端 Agent Loop 交互。LLM 识别旅行意图后调用 collect_preferences 触发前端弹窗，用户填写偏好后以 tool_result 回传继续对话。删除所有硬编码假数据（Mock 目的地、模板餐厅、fallback 酒店、train-data.ts）
