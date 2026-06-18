@@ -1,3 +1,4 @@
+/** @deprecated 被 Agent Loop 的 finalize_plan 取代。保留作为旧 Pipeline 路径的向后兼容,待 P0-C 删除旧 Pipeline 时一并删除。 */
 import { TravelStyle, type UserPreferences, type PlanSummary, type PlanReference, TravelPlanState } from "../../types/index.js";
 import { TravelPlanningPipeline } from "../../orchestrator/pipeline.js";
 import type { RegisteredTool } from "../types.js";
