@@ -44,11 +44,27 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 
   planning:   `【当前阶段:planning(行程编排)】
 任务:为每一天编排景点 + 衔接交通 + 餐厅。最后调 finalize_plan 输出完整 JSON。
-约束:
-- 景点→景点之间用 plan_transit 工具
+
+【时间线要求】
+每个 DayPlan 的 morning/afternoon/evening 之间必须用 plan_transit 工具填充 transitToNext。
+即使两点相邻步行可达,也要调 plan_transit 获取准确步行时间。每天最后一个 slot 不需要 transitToNext。
+
+【餐厅要求】
 - search_restaurants 用 scope=attraction + near=<景点名>
-- 餐厅多样性:本地特色 ≤60%、排除连锁(除非用户显式)
-- finalize_plan 失败 → planning,budgetRound+1,最多重试 3 次`,
+- 餐厅多样性:本地特色 ≤60%、排除连锁(除非用户显式要求连锁品牌)
+- 每天 dining 数组必须包含 3 个 slot(breakfast/lunch/dinner)
+- 每个餐厅需标注来源(source):amap / xhs / rag
+
+【行程质量自检】
+在调用 finalize_plan 前,请逐条检查:
+1. □ 每天 morning→afternoon→evening 之间都有 transitToNext?
+2. □ 每天 dining 数组长度为 3(早/午/晚)?
+3. □ 餐厅来源标注了 source?(amap/xhs/rag)
+4. □ 没有出现连锁品牌?(麦当劳/肯德基/星巴克等)
+5. □ 本地特色不超过 60%?
+6. □ 每日总耗时合理?(景点+交通+餐饮 ≤ 14h)
+7. □ 预算 breakdown 与 dayPlans 各活动 cost 总和一致?
+8. □ 景点顺序地理合理?(没有同一天在城东→城西来回跑)`,
 
   completed:  `【当前阶段:completed】
 行程已交付,等待用户反馈或新指令。`,
