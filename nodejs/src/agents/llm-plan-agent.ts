@@ -9,10 +9,11 @@ import { AmapWeatherSource } from "../data-sources/amap-weather-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { RagSource } from "../rag/rag-source.js";
 import { buildSystemPrompt, PROMPT_VERSION } from "./llm-plan-prompt.js";
+import type { ToolRegistry } from "../tools/registry.js";
 
 export class LLMPlanAgent extends BaseAgent {
   readonly name = "LLMPlanAgent";
-  constructor(log: Logger, dataSource: TravelDataSource) { super(log, dataSource); }
+  constructor(log: Logger, dataSource: TravelDataSource, private toolRegistry?: ToolRegistry) { super(log, dataSource); }
 
   protected async execute(state: TravelPlanState): Promise<TravelPlanState> {
     const pref = state.preferences!;
@@ -126,7 +127,7 @@ export class LLMPlanAgent extends BaseAgent {
         if (tc.name === "search_weather") hasSearchedWeather = true;
         if (tc.name === "search_attractions") hasSearchedAttractions = true;
         if (tc.name === "search_restaurants") hasSearchedDining = true;
-        if (tc.name === "search_xhs_notes") hasSearchedXhs = true;
+        if (tc.name === "search_xhs") hasSearchedXhs = true;
       }
       totalToolCalls += toolCalls.length;
 
@@ -140,9 +141,9 @@ export class LLMPlanAgent extends BaseAgent {
           const missing: string[] = [];
           if (!hasSearchedAttractions) missing.push("search_attractions(景点)");
           if (!hasSearchedDining) missing.push("search_restaurants(餐厅)");
-          if (!hasSearchedXhs) missing.push("search_xhs_notes(小红书探店)");
+          if (!hasSearchedXhs) missing.push("search_xhs(小红书探店)");
           if (!hasSearchedWeather) missing.push("search_weather(天气)");
-          if (missing.length === 0) missing.push("search_xhs_notes(小红书) 或 search_travel_guides(攻略)");
+          if (missing.length === 0) missing.push("search_xhs(小红书) 或 search_travel_guides(攻略)");
 
           const forceMsg = "【强制】检测到你未调用足够工具就直接生成行程。当前已调用 " + totalToolCalls + " 次，最少需要 " + MIN_TOOL_CALLS + " 次。缺少的信息来源：" + missing.join("、") + "。请先调用以上工具收集真实数据，再输出行程。";
           this.log.warn({ forceMsg, totalToolCalls, missing }, "LLM plan: forcing tool use");
@@ -235,6 +236,11 @@ export class LLMPlanAgent extends BaseAgent {
   }
 
   private buildToolDefs() {
+    if (this.toolRegistry) {
+      const allowedTools = ["search_attractions", "search_restaurants", "search_xhs", "search_weather", "search_travel_guides"];
+      return this.toolRegistry.getToolDefs().filter(t => allowedTools.includes(t.name));
+    }
+
     return [
       {
         name: "search_attractions",
@@ -265,7 +271,7 @@ export class LLMPlanAgent extends BaseAgent {
         },
       },
       {
-        name: "search_xhs_notes",
+        name: "search_xhs",
         description: "搜索小红书旅游笔记，获取真实游客的美食和游玩推荐。",
         input_schema: {
           type: "object",
@@ -365,6 +371,11 @@ export class LLMPlanAgent extends BaseAgent {
   }
 
   private async executeTool(name: string, input: Record<string, unknown>, city: string, pref: UserPreferences) {
+    if (this.toolRegistry) {
+      const result = await this.toolRegistry.execute(name, input);
+      return result.success ? result.data : { error: result.error };
+    }
+
     try {
       if (name === "search_weather") {
         try {
@@ -434,7 +445,7 @@ export class LLMPlanAgent extends BaseAgent {
         }
       }
 
-      if (name === "search_xhs_notes") {
+      if (name === "search_xhs") {
         const query = String(input.query ?? city + "旅游攻略");
         try {
           const resp = await fetch("http://127.0.0.1:3220/search?q=" + encodeURIComponent(query) + "&limit=5", {
