@@ -40,4 +40,5 @@ export const settings = Object.freeze({
   RAG_EMBEDDING_BASE_URL: process.env.RAG_EMBEDDING_BASE_URL ?? process.env.LLM_BASE_URL ?? "",
   RAG_EMBEDDING_MODEL: process.env.RAG_EMBEDDING_MODEL ?? "text-embedding-3-small",
   RAG_PDF_DIR: process.env.RAG_PDF_DIR ?? "",
+  USE_AGENT_LOOP: process.env.USE_AGENT_LOOP === "true",
 });

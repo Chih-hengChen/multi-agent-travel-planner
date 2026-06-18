@@ -137,6 +137,10 @@ export class TurnHandler {
 
     const newState = advanceState(ctx, settings.MAX_GATHERING_TURNS);
 
+    if (settings.USE_AGENT_LOOP && (newState === ConversationState.SEARCHING || newState === ConversationState.SEARCHING_TRANSPORT)) {
+      return this.handleViaAgentLoop(ctx, userMessage, onProgress);
+    }
+
     if (newState === ConversationState.SEARCHING_TRANSPORT) {
       return this.searchTransport(ctx);
     }
