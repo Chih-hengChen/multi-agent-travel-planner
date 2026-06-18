@@ -2,8 +2,13 @@
 
 ## 已完成
 
-### P0-B 接口契约文档 (2026-06-18)
-- `docs/p0-b-contracts.md`: P0-B 工具系统重做接口契约 — 8 个工具完整定义(4 迁移 + 2 新增 + 2 改造) + 共享 Schema 抽取方案 + LLMPlanAgent 迁移策略 + 7 步实施 plan
+### P0-B 实现 + P0-C/P1-A/P1-B/P1-C 契约文档 (2026-06-18)
+- P0-B 实现(7 commits): schemas 抽取 → 6 新工具 → hotel geoConstraint + xhs 渐进抓取 → select 工具 → LLMPlanAgent 迁移 → 死代码清理
+- `docs/p0-c-contracts.md`: P0-C Loop 接入对话流(SSE 事件映射 + 删除旧 Pipeline + 5 步 plan)
+- `docs/p1-a-contracts.md`: P1-A JSON 鲁棒(jsonrepair + 三层防御 + LLM 自修复 maxRetries=3)
+- `docs/p1-b-contracts.md`: P1-B RAG 优化(交付物 + 指标目标 + 实验流程,索引 rag-optimization-plan.md)
+- `docs/p1-c-contracts.md`: P1-C 行程质量(时间线交通 + 餐厅多样性 + 信息源融合)
+- `docs/p0-b-contracts.md`: P0-B 工具系统重做接口契约
 
 ### P0-A Step 7: plan_transit + finalize_plan 工具 (2026-06-18)
 - `18ec7cb` feat(tools): plan_transit + finalize_plan with JSON schema

@@ -850,5 +850,9 @@ P0-A 已于 2026-06-18 完成(`feat/p0-a-agent-loop` 分支,9步,216 测试通�
 | `docs/prompt-versions/README.md` | prompt 版本管理说明 |
 | `docs/p0-a-contracts.md` | P0-A 接口契约(5 核心函数 + 2 工具 + JSON schema) |
 | `docs/p0-b-contracts.md` | P0-B 接口契约(8 工具 + Schema 抽取 + LLMPlanAgent 迁移) |
+| `docs/p0-c-contracts.md` | P0-C 接口契约(Loop 接入对话流 + SSE 事件 + 旧 Pipeline 删除) |
+| `docs/p1-a-contracts.md` | P1-A 接口契约(jsonrepair + 三层防御 + LLM 自修复 maxRetries=3) |
+| `docs/p1-b-contracts.md` | P1-B 接口契约(RAG 优化交付物 + 指标目标 + 实验流程) |
+| `docs/p1-c-contracts.md` | P1-C 接口契约(时间线交通 + 餐厅多样性 + 信息源融合) |
 | `src/ARCHITECTURE.md` | 当前架构(实施过程中持续更新) |
 | `progress.md` | 高阶进度交接 |
