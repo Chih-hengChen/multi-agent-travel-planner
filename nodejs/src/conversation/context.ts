@@ -1,5 +1,6 @@
 import { ConversationState } from "./state-machine.js";
 import { TravelStyle, type UserPreferences, type PlanSummary, type TravelPlanState, type Hotel, type Train, type Flight } from "../types/index.js";
+import type { AgentState } from "../runtime/state.js";
 
 export interface TransportOption {
   id: string;
@@ -25,6 +26,7 @@ export interface TransportSearchResult {
 export interface ConversationContext {
   sessionId: string;
   state: ConversationState;
+  agentState?: AgentState;
   version: number;
   createdAt: number;
   updatedAt: number;
