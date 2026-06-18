@@ -1,6 +1,5 @@
 import { settings } from "../../config/settings.js";
 import type { RegisteredTool, ToolResult, ToolSource } from "../types.js";
-import type { Logger } from "pino";
 
 interface XhsNote {
   id: string;
@@ -20,120 +19,110 @@ interface XhsSearchResponse {
   error?: string;
 }
 
-interface XhsNoteDetail {
-  success: boolean;
-  note: { title: string; desc: string; image_list: string[]; tags: string[] };
-  error?: string;
-}
-
-export function createSearchXhsTool(log?: Logger): RegisteredTool {
+export function createSearchXhsTool(): RegisteredTool {
   return {
-    name: "search_xhs_notes",
-    description: "搜索小红书旅游攻略笔记。当用户询问目的地旅游推荐、当地体验、真实评价、避坑指南等内容时优先使用此工具，获取真实的用户分享内容。",
+    name: "search_xhs",
+    description: "小红书笔记搜索。默认抓 30 篇，不够再抓 30（渐进式）。提供真实游客评价、避坑提示、小众玩法。",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜索关键词，如：'北京旅游攻略'、'故宫一日游'、'环球影城避坑'" },
-        limit: { type: "number", description: "返回笔记数量，默认 5，最大 10", default: 5 },
+        query: { type: "string", description: "搜索关键词，如：'北京旅游攻略'、'故宫一日游'" },
+        limit: { type: "number", description: "期望返回数，默认 30", default: 30 },
+        extendIfFew: { type: "number", description: "结果不足 limit/半时追加抓取条数，默认 30", default: 30 },
       },
       required: ["query"],
     },
-    metadata: { category: "search", timeout: 20_000 },
+    metadata: { category: "search", timeout: 30_000 },
     execute: async (input) => {
       const query = String(input.query ?? "");
-      const limit = Math.min(Number(input.limit) || 5, 10);
+      const limit = Number(input.limit) || 30;
+      const extendIfFew = Number(input.extendIfFew) || 30;
 
-      try {
-        const result = await searchViaXhsService(query, limit);
-        if (result) return result;
-      } catch {
-        log?.info("XHS service unavailable, falling back to web search");
+      let notes = await callXhsService(query, limit);
+
+      if (notes.length < limit / 2) {
+        const expanded = expandQuery(query);
+        const more = await Promise.all(
+          expanded.slice(1, 3).map(q => callXhsService(q, Math.ceil(extendIfFew / 2)))
+        );
+        notes = dedupeByNoteId([...notes, ...more.flat()]);
       }
 
-      return searchViaWebFallback(query, limit);
+      if (!notes.length) {
+        return await webSearchFallback(query, limit);
+      }
+
+      const ranked = rerankXhs(notes);
+      const top = ranked.slice(0, 10);
+
+      const summary = top
+        .map(n => `【${n.title}】by ${n.nickname} ❤️${n.liked_count} ⭐${n.collected_count}\n${n.desc?.slice(0, 200) ?? ""}`)
+        .join("\n\n");
+
+      const sources: ToolSource[] = top.map(n => ({
+        title: n.title,
+        url: n.url,
+        type: "xhs" as const,
+      }));
+
+      return {
+        success: true,
+        data: { summary, notes, top, total: notes.length },
+        sources,
+      };
     },
   };
 
-  async function searchViaXhsService(query: string, limit: number): Promise<ToolResult | null> {
+  async function callXhsService(query: string, limit: number): Promise<XhsNote[]> {
     const baseUrl = settings.XHS_SERVICE_URL;
-    if (!baseUrl) return null;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
+    if (!baseUrl) return [];
 
     try {
       const resp = await fetch(`${baseUrl}/xhs/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, limit }),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(15_000),
       });
-      clearTimeout(timer);
-
-      if (!resp.ok) return null;
-
+      if (!resp.ok) return [];
       const data = (await resp.json()) as XhsSearchResponse;
-      if (!data.success || !data.notes?.length) {
-        return { success: true, data: { summary: "小红书未找到相关笔记", notes: [] }, sources: [] };
-      }
-
-      const notesWithContent = await enrichTopNotes(data.notes.slice(0, 3), baseUrl);
-
-      const allNotes = data.notes.map((n) => {
-        const enriched = notesWithContent.get(n.id);
-        return enriched ?? n;
-      });
-
-      const summary = allNotes
-        .map((n) => `【${n.title}】by ${n.nickname} ❤️${n.liked_count} ⭐${n.collected_count}\n${n.desc?.slice(0, 200) ?? ""}`)
-        .join("\n\n");
-
-      const sources: ToolSource[] = data.notes.map((n) => ({
-        title: n.title,
-        url: n.url,
-        type: "xhs" as const,
-      }));
-
-      log?.info({ query, noteCount: data.notes.length }, "search_xhs via service");
-      return { success: true, data: { summary, notes: allNotes }, sources };
-    } finally {
-      clearTimeout(timer);
+      return data.success ? (data.notes ?? []) : [];
+    } catch {
+      return [];
     }
   }
 
-  async function enrichTopNotes(
-    notes: XhsNote[],
-    baseUrl: string,
-  ): Promise<Map<string, XhsNote>> {
-    const result = new Map<string, XhsNote>();
-    const enriched = await Promise.allSettled(
-      notes.map(async (note) => {
-        try {
-          const resp = await fetch(`${baseUrl}/xhs/note`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: note.url }),
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!resp.ok) return null;
-          const detail = (await resp.json()) as XhsNoteDetail;
-          if (detail.success && detail.note) {
-            return { ...note, desc: detail.note.desc ?? note.desc, tags: detail.note.tags ?? note.tags };
-          }
-        } catch { /* ignore */ }
-        return null;
-      }),
-    );
+  function expandQuery(q: string): string[] {
+    const expansions: Record<string, string[]> = {
+      "美食": ["美食", "必吃", "推荐餐厅", "吃货"],
+      "景点": ["景点", "必去", "打卡", "游玩"],
+      "攻略": ["攻略", "旅游", "旅行", "自由行"],
+    };
 
-    enriched.forEach((r, i) => {
-      if (r.status === "fulfilled" && r.value) {
-        result.set(notes[i].id, r.value);
-      }
-    });
-    return result;
+    for (const [key, exps] of Object.entries(expansions)) {
+      if (q.includes(key)) return [q, ...exps];
+    }
+    return [q, `${q}旅游`, `${q}攻略`, `${q}推荐`];
   }
 
-  async function searchViaWebFallback(query: string, _limit: number): Promise<ToolResult> {
+  function dedupeByNoteId(notes: XhsNote[]): XhsNote[] {
+    const seen = new Set<string>();
+    return notes.filter(n => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
+  }
+
+  function rerankXhs(notes: XhsNote[]): XhsNote[] {
+    return notes.sort((a, b) => {
+      const aScore = Math.log((b.liked_count || 0) + 1);
+      const bScore = Math.log((a.liked_count || 0) + 1);
+      return aScore - bScore;
+    });
+  }
+
+  async function webSearchFallback(query: string, limit: number): Promise<ToolResult> {
     const daemonUrl = settings.WEBSEARCH_DAEMON_URL;
     const searchQuery = `site:xiaohongshu.com ${query}`;
 
@@ -149,21 +138,20 @@ export function createSearchXhsTool(log?: Logger): RegisteredTool {
       const data = await resp.json() as { results?: Array<{ title: string; url: string; description: string }> };
       const results = data.results ?? [];
 
-      if (results.length === 0) {
-        return { success: true, data: { summary: "未找到相关小红书笔记", notes: [] }, sources: [] };
+      if (!results.length) {
+        return { success: true, data: { summary: "未找到相关小红书笔记", notes: [], top: [], total: 0 }, sources: [] };
       }
 
-      const summary = results
-        .slice(0, 5)
+      const summary = results.slice(0, limit > 10 ? 10 : 5)
         .map((r, i) => `${i + 1}. ${r.title}\n${r.description ?? ""}`)
         .join("\n\n");
 
       const sources: ToolSource[] = results
-        .filter((r) => r.url?.includes("xiaohongshu.com"))
+        .filter(r => r.url?.includes("xiaohongshu.com"))
         .slice(0, 5)
-        .map((r) => ({ title: r.title, url: r.url, type: "xhs" as const }));
+        .map(r => ({ title: r.title, url: r.url, type: "xhs" as const }));
 
-      return { success: true, data: { summary, notes: [], fallback: true }, sources };
+      return { success: true, data: { summary, notes: [], top: [], total: 0, fallback: true }, sources };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, data: null, error: `XHS search failed: ${msg}` };

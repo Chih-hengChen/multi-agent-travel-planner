@@ -24,7 +24,7 @@ export function createRegistry(deps: RegistryDeps): ToolRegistry {
 
   registry.register(createCollectPreferencesTool());
   registry.register(createPlanTravelTool(deps.log));
-  registry.register(createSearchXhsTool(deps.log));
+  registry.register(createSearchXhsTool());
   registry.register(createSearchWebTool(undefined, deps.log));
   registry.register(createSearchTrainsTool(deps.sourceResolver, deps.log));
   registry.register(createSearchFlightsTool(deps.sourceResolver, deps.log));
