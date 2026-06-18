@@ -23,7 +23,11 @@ import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { Train12306Source } from "../data-sources/train12306-source.js";
 import { settings } from "../config/settings.js";
 import type { PlanSummary, Flight, Train, Hotel, ProgressCallback } from "../types/index.js";
+import type { Message } from "../api/llm-client.js";
 import { withSessionId } from "../logging/session-context.js";
+import { createInitialAgentState } from "../runtime/state.js";
+import { runAgentLoop, type SSEEmitter, type LoopResult, type LLMCaller, type ToolExecutor, type LLMResponse, type LLMCallOptions } from "../runtime/agent-loop.js";
+import { createSSEBridge } from "../runtime/sse.js";
 
 export interface TurnResult {
   newState: ConversationState;
@@ -368,6 +372,84 @@ ${optionsStr}
       signal: AbortSignal.timeout(15_000),
     });
     return resp.json();
+  }
+
+  async handleViaAgentLoop(
+    ctx: ConversationContext,
+    userMessage: string,
+    onProgress?: ProgressCallback,
+  ): Promise<TurnResult> {
+    const agentState: import("../runtime/state.js").AgentState = ctx.agentState ?? createInitialAgentState();
+    const messages: Message[] = ctx.messageHistory.map(m => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: [{ type: "text" as const, text: m.content }],
+    }));
+
+    const llmCaller: LLMCaller = {
+      async call(opts: LLMCallOptions): Promise<LLMResponse> {
+        const body: Record<string, unknown> = {
+          model: opts.model,
+          messages: opts.messages,
+          system: opts.systemPrompt,
+          max_tokens: opts.maxTokens,
+          temperature: opts.temperature,
+        };
+        if (opts.tools.length > 0) { body.tools = opts.tools; }
+
+        const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
+          method: "POST",
+          headers: { "x-api-key": settings.LLM_API_KEY, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(120_000),
+        });
+        if (!resp.ok) throw new Error(`LLM API ${resp.status}: ${await resp.text()}`);
+        const data = await resp.json() as { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason?: string };
+
+        const textBlocks = data.content.filter(c => c.type === "text").map(c => c.text ?? "").join("");
+        const toolCalls = data.content.filter(c => c.type === "tool_use").map(c => ({
+          id: c.id, name: c.name!, input: c.input!,
+        }));
+
+        return { stopReason: data.stop_reason ?? "", text: textBlocks, toolCalls };
+      },
+    };
+
+    const toolExecutor: ToolExecutor = {
+      async execute(call, state) {
+        return { success: true, data: { toolName: call.name, input: call.input } };
+      },
+    };
+
+    const schemaLookup: import("../runtime/validate-tool-calls.js").SchemaLookup = {
+      getSchema(_name) { return { safeParse: (v: unknown) => ({ success: true, data: v }) }; },
+      getPrecondition(_name) { return undefined; },
+    };
+
+    const emit = onProgress ? createSSEBridge((event, data) => onProgress({ phase: "", progress: 0, message: `${event}: ${JSON.stringify(data)}`, eta: 0 })) : undefined;
+
+    try {
+      const result = await runAgentLoop(ctx.sessionId, agentState, messages, userMessage, {
+        llmCaller,
+        schemaLookup,
+        toolExecutor,
+        emit,
+      });
+
+      ctx.agentState = result.state;
+      ctx.updatedAt = Date.now();
+
+      const lastMsg = result.messages[result.messages.length - 1];
+      const replyText = lastMsg && typeof lastMsg.content === "string"
+        ? lastMsg.content
+        : (Array.isArray(lastMsg?.content)
+          ? (lastMsg.content as Array<{ type: string; text?: string }>).find(c => c.type === "text")?.text ?? "行程已生成"
+          : "行程已生成");
+
+      return { newState: ConversationState.COMPLETED, replyText };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { newState: ConversationState.ERROR_RECOVERABLE, replyText: `行程生成失败:${msg}`, error: msg };
+    }
   }
 
   private async executeOptionSelect(ctx: ConversationContext, index: number, isHotel: boolean, onProgress?: ProgressCallback): Promise<TurnResult> {
