@@ -2,6 +2,16 @@
 
 ## 已完成
 
+### P0-C Agent Loop 接入对话流 (2026-06-18)
+- `7c84e52` feat(conversation): USE_AGENT_LOOP feature flag + integration
+- `800132f` refactor(conversation): add Agent Loop integration route to TurnHandler
+- `41c19f7` feat(runtime): SSE event bridge for Agent Loop
+- `f214e86` feat(context): add AgentState to ConversationContext
+- ConversationContext `agentState` 字段添加
+- SSE 事件桥接(llm_request/llm_response/tools_executed → progress)
+- TurnHandler.handleViaAgentLoop() — LLMCaller+ToolExecutor 适配,Agent Loop 委托
+- USE_AGENT_LOOP 特性开关 (env flag, 默认关闭)
+
 ### P0-B 实现 + P0-C/P1-A/P1-B/P1-C 契约文档 (2026-06-18)
 - P0-B 实现(7 commits): schemas 抽取 → 6 新工具 → hotel geoConstraint + xhs 渐进抓取 → select 工具 → LLMPlanAgent 迁移 → 死代码清理
 - `docs/p0-c-contracts.md`: P0-C Loop 接入对话流(SSE 事件映射 + 删除旧 Pipeline + 5 步 plan)
