@@ -7,6 +7,8 @@ import {
   pickModel,
   pickTemperature,
   pickMaxTokens,
+  stateSummary,
+  buildSystemPrompt,
   forceContinuePrompt,
   rejectionPrompt,
   MAX_ITERATIONS,
@@ -18,7 +20,6 @@ import {
   type ToolExecutor,
   type LoopDeps,
 } from "../agent-loop.js";
-import { stateSummary, buildSystemPrompt } from "../system-prompt.js";
 import { setTraceDir } from "../trace.js";
 import {
   type AgentState,

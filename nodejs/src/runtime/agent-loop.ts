@@ -13,7 +13,8 @@ import {
   validateToolCalls,
 } from "./validate-tool-calls.js";
 import { applyToolEffects, type ToolResultLike } from "./apply-tool-effects.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import { buildSystemPrompt, stateSummary } from "./system-prompt.js";
+export { stateSummary, buildSystemPrompt } from "./system-prompt.js";
 import { listToolsForPhase } from "../tools/policy.js";
 
 export const MAX_ITERATIONS = 50;
