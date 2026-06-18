@@ -9,6 +9,18 @@
   - 新增 `finalize-plan.ts`: 行程交付 —— parsePlanLoose + `computeBudgetBreakdown` 预算分类汇总
   - 新增 `plan-schema.test.ts`: Zod 校验 + parsePlanLoose 修复覆盖率 100% (18/18)
 
+### P0-A Step 8: phase-specific system prompt builder (2026-06-18)
+- `84da275` feat(runtime): phase-specific system prompt builder
+  - 抽取 `BASE_PROMPT` / `PHASE_PROMPTS` / `buildSystemPrompt` / `stateSummary` 到独立 `system-prompt.ts`
+  - 新增 `system-prompt.test.ts`: 5 个 phase 的 prompt 断言测试 + stateSummary 字段覆盖
+  - agent-loop.ts 通过 re-export 保持向后兼容
+
+### P0-A Step 9: barrel index.ts + e2e 集成测试 (2026-06-18)
+- `dba35e7` feat(runtime): barrel index.ts + e2e integration test
+  - 新增 `runtime/index.ts` barrel export，聚合 6 个模块的公开 API
+  - 新增 `e2e.test.ts`: searching → selecting → planning → completed 全流程集成测试
+  - E2E 覆盖：多 phase 转换、并行 tool_use、thought 解析、budget 回退循环、immutable state
+
 ### Agent Loop 架构重写 (2026-05-31)
 
 - `ba81715` feat: LLM agent loop — collect_preferences 工具 + SSE 事件流 + 前端 Agent Loop 交互。LLM 识别旅行意图后调用 collect_preferences 触发前端弹窗，用户填写偏好后以 tool_result 回传继续对话。删除所有硬编码假数据（Mock 目的地、模板餐厅、fallback 酒店、train-data.ts）
