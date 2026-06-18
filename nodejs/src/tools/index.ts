@@ -10,6 +10,7 @@ import { createSearchAttractionsTool } from "./definitions/search-attractions.js
 import { createSearchBaikeTool } from "./definitions/search-baike.js";
 import { createSearchWeatherTool } from "./definitions/search-weather.js";
 import { createSearchTravelGuidesTool } from "./definitions/search-travel-guides.js";
+import { createSearchRestaurantsTool } from "./definitions/search-restaurants.js";
 import type { SourceResolver } from "../data-sources/source-resolver.js";
 import type { Logger } from "pino";
 
@@ -32,6 +33,7 @@ export function createRegistry(deps: RegistryDeps): ToolRegistry {
   registry.register(createSearchBaikeTool());
   registry.register(createSearchWeatherTool());
   registry.register(createSearchTravelGuidesTool());
+  registry.register(createSearchRestaurantsTool());
 
   return registry;
 }
