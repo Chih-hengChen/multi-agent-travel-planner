@@ -201,6 +201,8 @@ export async function runAgentLoop(
   ];
 
   let consecutiveRejections = 0;
+  let jsonRepairAttempts = 0;
+  const MAX_JSON_REPAIR = 3;
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     state = { ...state, iteration: iter };
@@ -295,6 +297,23 @@ export async function runAgentLoop(
     });
 
     messages.push({ role: "user", content: executedToToolResultContent(executed) });
+
+    // JSON self-repair: finalize_plan JSON 解析失败时,回传 LLM 修复
+    const jsonRepair = executed.find(e => !e.result.success && (e.result as Record<string, unknown>)._jsonRepairError);
+    if (jsonRepair) {
+      jsonRepairAttempts++;
+      if (jsonRepairAttempts >= MAX_JSON_REPAIR) {
+        throw new Error(`JSON 自修复耗尽(${MAX_JSON_REPAIR}次):${jsonRepair.result.error}`);
+      }
+      messages.push({
+        role: "user",
+        content: `JSON 解析失败(第 ${jsonRepairAttempts} 次):${jsonRepair.result.error}
+
+请修正以上 JSON 错误后重新输出完整 finalize_plan JSON。
+常见错误:尾逗号 / 缺括号 / 单引号代替双引号 / key 没有加引号。`,
+      });
+      continue;
+    }
 
     state = applyToolEffects(state, executed.map(e => e.result));
     state = maybeAdvancePhase(state);

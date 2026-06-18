@@ -23,6 +23,7 @@
     "commander": "^13.1.0",
     "dotenv": "^16.5.0",
     "fastify": "^5.3.3",
+    "jsonrepair": "^3.14.0",
     "pdf-parse": "^2.4.5",
     "pino-pretty": "^13.0.0",
     "zod": "^3.24.4"

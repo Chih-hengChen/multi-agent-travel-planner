@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonrepair } from "jsonrepair";
 import { TravelPlanSchema } from "../schemas/travel-plan.js";
 import { ActivitySchema } from "../schemas/activity.js";
 import { TransitSegmentSchema } from "../schemas/transit.js";
@@ -40,6 +41,19 @@ export class JsonRepairExhaustedError extends Error {
 
 const PlanSchema = TravelPlanSchema;
 
+function stripCodeFences(raw: string): string {
+  return raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+}
+
+function repairJson(raw: string): string {
+  const cleaned = stripCodeFences(raw);
+  try {
+    return jsonrepair(cleaned);
+  } catch {
+    return simpleRepair(cleaned);
+  }
+}
+
 function extractOutermostBlock(text: string): string | null {
   const start = text.indexOf("{");
   if (start < 0) return null;
@@ -75,18 +89,22 @@ export function parsePlanLoose(raw: string): z.infer<typeof TravelPlanSchema> {
     throw new JsonRepairExhaustedError("Empty input", raw?.slice(0, 200) ?? "");
   }
 
+  // 第 1 层: brace-balanced 提取
   const candidate = extractOutermostBlock(raw);
   if (!candidate) {
     throw new JsonRepairExhaustedError("No JSON object {...} found", raw.slice(0, 200));
   }
 
+  // 第 2 层: jsonrepair + JSON.parse + Zod
   let lastError: unknown;
   try {
-    return TravelPlanSchema.parse(JSON.parse(candidate));
+    const repaired = repairJson(candidate);
+    return TravelPlanSchema.parse(JSON.parse(repaired));
   } catch (err) {
     lastError = err;
   }
 
+  // 第 3 层兜底: simpleRepair
   try {
     const repaired = simpleRepair(candidate);
     return TravelPlanSchema.parse(JSON.parse(repaired));
@@ -95,7 +113,7 @@ export function parsePlanLoose(raw: string): z.infer<typeof TravelPlanSchema> {
   }
 
   throw new JsonRepairExhaustedError(
-    `parsePlanLoose failed after regex + simpleRepair`,
+    `parsePlanLoose failed after extract + jsonrepair + simpleRepair`,
     candidate.slice(-300),
     lastError,
   );
