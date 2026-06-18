@@ -2,6 +2,9 @@
 
 ## 已完成
 
+### P0-B 接口契约文档 (2026-06-18)
+- `docs/p0-b-contracts.md`: P0-B 工具系统重做接口契约 — 8 个工具完整定义(4 迁移 + 2 新增 + 2 改造) + 共享 Schema 抽取方案 + LLMPlanAgent 迁移策略 + 7 步实施 plan
+
 ### P0-A Step 7: plan_transit + finalize_plan 工具 (2026-06-18)
 - `18ec7cb` feat(tools): plan_transit + finalize_plan with JSON schema
   - 新增 `plan-schema.ts`: 完整 Zod 行程 JSON schema + `parsePlanLoose` 三层防御（brace-balanced 提取 + JSON.parse + simpleRepair）

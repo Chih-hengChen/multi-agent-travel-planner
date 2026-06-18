@@ -848,6 +848,7 @@ P0-A 已于 2026-06-18 完成(`feat/p0-a-agent-loop` 分支,9步,216 测试通�
 | `docs/optimization-log.md` | 每次 prompt / 参数 / 工具变更决策记录(模板) |
 | `docs/rag-optimization-log.md` | RAG 实验记录(每个 variant 一节) |
 | `docs/prompt-versions/README.md` | prompt 版本管理说明 |
-| `docs/p0-a-step-plan.md` | P0-A 详细 step plan(待产出) |
+| `docs/p0-a-contracts.md` | P0-A 接口契约(5 核心函数 + 2 工具 + JSON schema) |
+| `docs/p0-b-contracts.md` | P0-B 接口契约(8 工具 + Schema 抽取 + LLMPlanAgent 迁移) |
 | `src/ARCHITECTURE.md` | 当前架构(实施过程中持续更新) |
 | `progress.md` | 高阶进度交接 |
