@@ -2,6 +2,14 @@
 
 ## 已完成
 
+### P1-A + P1-B + P1-C 实现 (2026-06-18)
+- `485c7b7` feat(scripts): P1-B RAG evaluation scripts (rag-eval/rag-compare/label-tool)
+- `f441eb5` feat(runtime): P1-C itinerary quality enforcement (timeline transit + diversity + self-check)
+- `f1a9582` feat(runtime): P1-A jsonrepair + LLM self-repair loop (parsePlanLoose three-layer + maxRetries=3)
+- P1-A: 3-layer JSON defense (extract → jsonrepair → simpleRepair) + LLM self-repair loop in agent-loop
+- P1-B: RAG eval scripts for 6-variant experiment; eval set expansion framework (label-tool + rag-eval + rag-compare)
+- P1-C: Planning phase prompt enhancement (timeline transitToNext coverage, restaurant diversity, Activity.source, 8-item self-check checklist)
+
 ### P0-C Agent Loop 接入对话流 (2026-06-18)
 - `7c84e52` feat(conversation): USE_AGENT_LOOP feature flag + integration
 - `800132f` refactor(conversation): add Agent Loop integration route to TurnHandler
