@@ -1,6 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { TravelStyle, PlanRequestSchema, type PlanSummary, type UserPreferences } from "../types/index.js";
-import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
 import { handleConversationMessage, handleSelectMessage } from "./stream-handler.js";
 import { createSessionStore } from "../conversation/session-store.js";
 import { InfoExtractor } from "../conversation/info-extractor.js";
@@ -11,7 +9,7 @@ import { ConversationOrchestrator } from "../orchestrator/conversation-orchestra
 const sessionStore = createSessionStore();
 const infoExtractor = new InfoExtractor();
 const gatheringAgent = new GatheringAgent();
-const turnHandler = new TurnHandler(infoExtractor, gatheringAgent, new TravelPlanningPipeline());
+const turnHandler = new TurnHandler(infoExtractor, gatheringAgent);
 const orchestrator = new ConversationOrchestrator(sessionStore, turnHandler);
 
 export function registerRoutes(app: FastifyInstance) {
@@ -25,104 +23,16 @@ export function registerRoutes(app: FastifyInstance) {
     agents: 6,
   }));
 
-  app.post("/api/plan", async (request, reply) => {
-    const parsed = PlanRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Validation failed", details: parsed.error.issues });
-    }
-    const req = parsed.data;
-
-    const prefs: UserPreferences = {
-      budget: req.budget,
-      travelStyle: (req.travel_style as TravelStyle) ?? TravelStyle.COMFORT,
-      departureCity: req.departure_city,
-      startDate: req.start_date,
-      endDate: req.end_date,
-      numTravelers: req.num_travelers,
-      interests: req.interests,
-      dietaryRestrictions: [],
-      accessibilityNeeds: [],
-      notes: req.notes,
-      outboundTransportPreference: req.outbound_transport_preference,
-      returnTransportPreference: req.return_transport_preference,
-      mustVisitAttractions: req.must_visit_attractions,
-      departureTime: req.departure_time,
-      budgetStrictness: req.budget_strictness,
-      specialRequests: req.special_requests,
-      accommodationType: req.accommodation_type,
-      preferredStarRating: req.preferred_star_rating,
-      preferredHotelBrands: req.preferred_hotel_brands,
-      localTransitMode: req.local_transit_mode,
-      diningPreference: req.dining_preference,
-    };
-
-    const pipeline = new TravelPlanningPipeline();
-    const state = await pipeline.run(prefs);
-
-    const dest = state.selectedDestination;
-    const bb = state.budgetBreakdown;
-    const days = state.activityResult?.dayPlans.length ?? 0;
-
-    const summary: PlanSummary = {
-      destination: dest?.city ?? "",
-      country: dest?.country ?? "",
-      flightCost: bb?.flightCost ?? 0,
-      trainCost: bb?.trainCost ?? 0,
-      hotelCost: bb?.hotelCost ?? 0,
-      activityCost: bb?.activityCost ?? 0,
-      totalCost: bb?.totalCost ?? 0,
-      budget: bb?.budget ?? 0,
-      withinBudget: bb?.isWithinBudget ?? true,
-      adjustmentRounds: state.adjustmentRound,
-      hotelName: state.hotelResult?.recommended?.name ?? "",
-      days,
-      highlights: dest?.highlights ?? [],
-      warnings: state.errorMessages,
-      transportMode: state.transportMode,
-      outboundFlights: state.flightResult?.outboundFlights ?? [],
-      returnFlights: state.flightResult?.returnFlights ?? [],
-      trainOutbound: state.trainOutbound ?? null,
-      trainReturn: state.trainReturn ?? null,
-      hotels: state.hotelResult?.hotels ?? [],
-      dayPlans: state.activityResult?.dayPlans ?? [],
-    };
-    return reply.send(summary);
+  app.post("/api/plan", async (_request, reply) => {
+    return reply.status(410).send({
+      error: "POST /api/plan deprecated. Use POST /api/chat/:sid with Agent Loop instead.",
+    });
   });
 
-  app.post("/api/plan/full", async (request, reply) => {
-    const parsed = PlanRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "Validation failed", details: parsed.error.issues });
-    }
-    const req = parsed.data;
-
-    const prefs: UserPreferences = {
-      budget: req.budget,
-      travelStyle: (req.travel_style as TravelStyle) ?? TravelStyle.COMFORT,
-      departureCity: req.departure_city,
-      startDate: req.start_date,
-      endDate: req.end_date,
-      numTravelers: req.num_travelers,
-      interests: req.interests,
-      dietaryRestrictions: [],
-      accessibilityNeeds: [],
-      notes: req.notes,
-      outboundTransportPreference: req.outbound_transport_preference,
-      returnTransportPreference: req.return_transport_preference,
-      mustVisitAttractions: req.must_visit_attractions,
-      departureTime: req.departure_time,
-      budgetStrictness: req.budget_strictness,
-      specialRequests: req.special_requests,
-      accommodationType: req.accommodation_type,
-      preferredStarRating: req.preferred_star_rating,
-      preferredHotelBrands: req.preferred_hotel_brands,
-      localTransitMode: req.local_transit_mode,
-      diningPreference: req.dining_preference,
-    };
-
-    const pipeline = new TravelPlanningPipeline();
-    const state = await pipeline.run(prefs);
-    return reply.send(JSON.parse(JSON.stringify(state)));
+  app.post("/api/plan/full", async (_request, reply) => {
+    return reply.status(410).send({
+      error: "POST /api/plan/full deprecated. Use POST /api/chat/:sid with Agent Loop instead.",
+    });
   });
 
   app.post("/api/chat", async (_request, reply) => {
@@ -153,12 +63,12 @@ export function registerRoutes(app: FastifyInstance) {
 
   app.put("/api/chat/:sid/plan", async (request, reply) => {
     const { sid } = (request as any).params as { sid: string };
-    const body = request.body as { plan?: PlanSummary };
+    const body = request.body as { plan?: unknown };
     if (!body?.plan) {
       return reply.status(400).send({ error: "plan is required" });
     }
     try {
-      await orchestrator.handleEditPlan(sid, body.plan);
+      await orchestrator.handleEditPlan(sid, body.plan as any);
       return reply.send({ ok: true });
     } catch {
       return reply.status(404).send({ error: "Session not found" });

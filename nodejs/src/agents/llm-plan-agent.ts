@@ -166,7 +166,7 @@ export class LLMPlanAgent extends BaseAgent {
 
         let contentStr = JSON.stringify(result);
         if (contentStr.length > 2000) {
-          contentStr = JSON.stringify(this.truncateToolResult(tc.name, result));
+          contentStr = JSON.stringify(this.truncateToolResult(tc.name, result as Record<string, unknown>));
         }
 
         toolResults.push({

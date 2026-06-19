@@ -7,14 +7,12 @@ import {
   type TransportSearchResult,
   mergeExtracted,
   toUserPreferences,
-  buildPlanSummary,
 } from "./context.js";
 import { InfoExtractor } from "./info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
 import { IntentRouter } from "../intent-router/index.js";
 import type { RouteDecision } from "../intent-router/types.js";
 import { sessionLogger } from "../logging/session-logger.js";
-import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
 import { SourceResolver } from "../data-sources/source-resolver.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
@@ -50,20 +48,17 @@ export interface SelectRequest {
 export class TurnHandler {
   private readonly infoExtractor: InfoExtractor;
   private readonly gatheringAgent: GatheringAgent;
-  private readonly pipeline: TravelPlanningPipeline;
   private readonly intentRouter: IntentRouter;
   private readonly log: Logger;
 
   constructor(
     infoExtractor: InfoExtractor,
     gatheringAgent: GatheringAgent,
-    pipeline: TravelPlanningPipeline,
     intentRouter?: IntentRouter,
     log?: Logger,
   ) {
     this.infoExtractor = infoExtractor;
     this.gatheringAgent = gatheringAgent;
-    this.pipeline = pipeline;
     this.intentRouter = intentRouter ?? new IntentRouter();
     this.log = log ?? pino({ level: settings.LOG_LEVEL });
   }
@@ -642,23 +637,8 @@ ${optionsStr}
     const introText = `好的，正在为您规划${ctx.destination ?? ""}的完整行程，请稍候...`;
 
     return withSessionId(ctx.sessionId, async () => {
-    try {
-      const prefs = toUserPreferences(ctx);
-      const state = await this.pipeline.run(prefs, onProgress);
-      const planResult = buildPlanSummary(state);
-
-      ctx.planSummary = planResult;
-      ctx.state = ConversationState.COMPLETED;
-      ctx.updatedAt = Date.now();
-
-      return {
-        newState: ConversationState.COMPLETED,
-        replyText: introText,
-        planResult,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.log.error({ err: msg, sessionId: ctx.sessionId }, "Pipeline failed");
+      const msg = "Pipeline deprecated. Set USE_AGENT_LOOP=true to use Agent Loop with finalize_plan.";
+      this.log.warn({ sessionId: ctx.sessionId }, msg);
 
       ctx.state = ConversationState.ERROR_RECOVERABLE;
       ctx.lastError = {
@@ -671,10 +651,9 @@ ${optionsStr}
 
       return {
         newState: ConversationState.ERROR_RECOVERABLE,
-        replyText: `行程规划失败：${msg}`,
+        replyText: introText,
         error: msg,
       };
-    }
     });
   }
 

@@ -2,6 +2,19 @@
 
 ## 已完成
 
+### P0-C §3 Pipeline 删除 (2026-06-19)
+按契约 §3 完成废弃 Pipeline 和 deprecated Agents 清理:
+- 删除:`orchestrator/pipeline.ts` / `budget-loop.ts` / `parallel.ts`
+- 删除:`agents/{activity,budget,destination,preference}-agent.ts`(4 个)
+- 保留:`agents/base-agent.ts`(被 FlightAgent/HotelAgent/LLMPlanAgent 继承)、`gathering-agent.ts`(turn-handler generateQuestion 仍在用,待 Agent Loop 完整接管 gathering phase 后删)
+- 改 `plan-travel.ts` 为 deprecated 桩(execute 返回 410-like 错误,不再调 Pipeline)
+- 改 `turn-handler.ts`:移除 `pipeline` 字段 + import;`runPipeline` 改为返回 deprecated 错误,提示用 Agent Loop
+- 改 `routes.ts`:`/api/plan` 和 `/api/plan/full` 改为 410 Gone;`TurnHandler` 构造不再传 Pipeline
+- 改 `cli/index.ts`:打印 deprecated 提示并 exit 1
+- 更新 barrels:`agents/index.ts` 只 re-export BaseAgent/FlightAgent/HotelAgent/LLMPlanAgent;`orchestrator/index.ts` 只 re-export ConversationOrchestrator
+- 修 `llm-plan-agent.ts:169` cast(顺手修一个 unknown 类型错误)
+- 71/71 测试通过;剩余 TS 错误均为既有问题(trace.test.ts / e2e.test.ts / agent-loop TraceEvent schema / sse.ts / turn-handler handleViaAgentLoop adapter)
+
 ### Agent Loop Review 修复 (2026-06-19)
 基于契约对齐 review 修复 7 项关键问题(P0-C §3 删除废弃 Pipeline 留作续作):
 - P0:`policy.ts` 加 `search_flights / search_trains` 到 searching phase,`apply-tool-effects.ts` 加 effect handler 把 `data.flights + data.trains` 合并到 `candidateTransports`,解决 searching→selecting→planning 转换链断
