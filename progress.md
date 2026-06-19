@@ -2,6 +2,17 @@
 
 ## 已完成
 
+### Agent Loop Review 修复 (2026-06-19)
+基于契约对齐 review 修复 7 项关键问题(P0-C §3 删除废弃 Pipeline 留作续作):
+- P0:`policy.ts` 加 `search_flights / search_trains` 到 searching phase,`apply-tool-effects.ts` 加 effect handler 把 `data.flights + data.trains` 合并到 `candidateTransports`,解决 searching→selecting→planning 转换链断
+- P0:`apply-tool-effects.ts` 重写 `select_transport / select_hotel` reducer,从 `candidateTransports / candidateHotels` 按 id find 完整对象;`ToolResultLike` 加可选 `_jsonRepairError?: boolean`;`finalize-plan.ts` 失败分支设置该标记,使 `agent-loop.ts:302` self-repair loop 真正触发
+- P1:`search-xhs.ts` 修复 `rerankXhs` 的 a/b 颠倒 bug(原实际为低赞升序)
+- P1:`search-restaurants.ts` 实现 `scoreRestaurant + isLocalSpecialty + 本地特色 60% cap`,接入 `callAmap` QPS 限流,输出 `scores` 字段供 rerankScores 提取
+- P1:`search-hotels.ts` 实现 `geoConstraint` 完整路径(`HotelSearchInputSchema` Zod 校验 + `preferredArea / keyAttractions / preferredBrands` 过滤 + `preferNear=center/transit` 排序)
+- P1-C:`finalize-plan.ts` 加 `validatePlanQuality` 硬约束(transit coverage / 连锁品牌 / 本地特色 60% cap),失败设置 `_jsonRepairError` 触发 LLM self-repair
+- P1-B:新增 `scripts/gen-eval-set.ts`,生成 `data/rag/eval-v1.jsonl`(100 条,5 城市 × 5 类别 × 4)
+- 测试:更新 `policy.test.ts / apply-tool-effects.test.ts` 匹配新契约(12→14 工具,select 用例改 id-based lookup),71 测试通过
+
 ### P1-A + P1-B + P1-C 实现 (2026-06-18)
 - `485c7b7` feat(scripts): P1-B RAG evaluation scripts (rag-eval/rag-compare/label-tool)
 - `f441eb5` feat(runtime): P1-C itinerary quality enforcement (timeline transit + diversity + self-check)

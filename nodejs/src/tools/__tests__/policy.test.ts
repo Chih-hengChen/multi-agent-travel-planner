@@ -21,6 +21,8 @@ const EXPECTED_PHASE_MATRIX: Record<ToolName, Phase[]> = {
   search_xhs:            ["searching", "planning"],
   search_weather:        ["searching"],
   search_travel_guides:  ["searching", "planning"],
+  search_flights:        ["searching"],
+  search_trains:         ["searching"],
   plan_transit:          ["planning"],
   select_transport:      ["selecting"],
   select_hotel:          ["selecting"],
@@ -57,12 +59,14 @@ describe("listToolsForPhase", () => {
     expect(names("gathering")).toEqual(["collect_preferences"]);
   });
 
-  it("searching exposes 7 search tools", () => {
+  it("searching exposes 9 search tools", () => {
     expect(names("searching").sort()).toEqual([
       "search_attractions",
       "search_baike",
+      "search_flights",
       "search_hotels",
       "search_restaurants",
+      "search_trains",
       "search_travel_guides",
       "search_weather",
       "search_xhs",
@@ -113,10 +117,12 @@ describe("getToolPolicy / getAllToolNames", () => {
     expect(getToolPolicy("not_a_tool")).toBeUndefined();
   });
 
-  it("getAllToolNames returns 12 tools", () => {
-    expect(getAllToolNames()).toHaveLength(12);
+  it("getAllToolNames returns 14 tools", () => {
+    expect(getAllToolNames()).toHaveLength(14);
     expect(getAllToolNames()).toContain("collect_preferences");
     expect(getAllToolNames()).toContain("finalize_plan");
+    expect(getAllToolNames()).toContain("search_flights");
+    expect(getAllToolNames()).toContain("search_trains");
   });
 });
 

@@ -9,6 +9,8 @@ export type ToolName =
   | "search_xhs"
   | "search_weather"
   | "search_travel_guides"
+  | "search_flights"
+  | "search_trains"
   | "plan_transit"
   | "select_transport"
   | "select_hotel"
@@ -61,6 +63,16 @@ const TOOL_PHASE_POLICY: Record<ToolName, ToolPhasePolicyEntry> = {
     description: "RAG 攻略检索",
     allowedPhases: ["searching", "planning"],
   },
+  search_flights: {
+    name: "search_flights",
+    description: "航班搜索(Amadeus + WebSearch 兜底),结果填充 candidateTransports",
+    allowedPhases: ["searching"],
+  },
+  search_trains: {
+    name: "search_trains",
+    description: "高铁/火车搜索(12306 MCP + WebSearch 兜底),结果填充 candidateTransports",
+    allowedPhases: ["searching"],
+  },
   plan_transit: {
     name: "plan_transit",
     description: "市内交通规划(高德 /direction/transit)",
@@ -96,6 +108,8 @@ export const TOOL_FALLBACK_CHAIN: Record<ToolName, string[]> = {
   search_xhs:           ["xhs_service", "web_search_site_filter", "rag_travel_guides"],
   search_weather:       ["amap_weather", "web_search"],
   search_travel_guides: ["rag_vector", "rag_keyword_fallback"],
+  search_flights:       ["amadeus_api", "web_search"],
+  search_trains:        ["train12306_mcp", "web_search"],
   plan_transit:         ["amap_direction", "haversine_estimate"],
   select_transport:     [],
   select_hotel:         [],

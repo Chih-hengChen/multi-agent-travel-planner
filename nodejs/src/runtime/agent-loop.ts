@@ -299,7 +299,7 @@ export async function runAgentLoop(
     messages.push({ role: "user", content: executedToToolResultContent(executed) });
 
     // JSON self-repair: finalize_plan JSON 解析失败时,回传 LLM 修复
-    const jsonRepair = executed.find(e => !e.result.success && (e.result as Record<string, unknown>)._jsonRepairError);
+    const jsonRepair = executed.find(e => !e.result.success && e.result._jsonRepairError === true);
     if (jsonRepair) {
       jsonRepairAttempts++;
       if (jsonRepairAttempts >= MAX_JSON_REPAIR) {

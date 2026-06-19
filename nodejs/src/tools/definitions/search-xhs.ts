@@ -116,9 +116,9 @@ export function createSearchXhsTool(): RegisteredTool {
 
   function rerankXhs(notes: XhsNote[]): XhsNote[] {
     return notes.sort((a, b) => {
-      const aScore = Math.log((b.liked_count || 0) + 1);
-      const bScore = Math.log((a.liked_count || 0) + 1);
-      return aScore - bScore;
+      const aScore = Math.log((a.liked_count || 0) + 1);
+      const bScore = Math.log((b.liked_count || 0) + 1);
+      return bScore - aScore;
     });
   }
 

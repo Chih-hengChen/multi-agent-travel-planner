@@ -82,11 +82,12 @@ function makePrefs(over: Partial<UserPreferences> = {}): UserPreferences {
 }
 
 describe("TOOL_EFFECT_HANDLERS table", () => {
-  it("has handlers for all 12 tools", () => {
+  it("has handlers for all 14 tools", () => {
     const expected = [
       "collect_preferences", "search_baike", "search_weather",
       "search_attractions", "search_hotels", "search_restaurants",
       "search_xhs", "search_travel_guides",
+      "search_flights", "search_trains",
       "select_transport", "select_hotel",
       "plan_transit", "finalize_plan",
     ];
@@ -244,18 +245,36 @@ describe("plan_transit handler (appendTransit)", () => {
 });
 
 describe("select_transport / select_hotel", () => {
-  it("select_transport writes both outbound + return", () => {
-    const state = makeState();
+  it("select_transport resolves outboundId + returnId from candidateTransports", () => {
+    const state = makeState({
+      candidateTransports: [
+        { id: "out", mode: "flight", departStation: "A", arriveStation: "B", departTime: "08:00", arriveTime: "10:00", duration: "2h", price: 1000, isRecommended: false },
+        { id: "ret", mode: "flight", departStation: "B", arriveStation: "A", departTime: "20:00", arriveTime: "22:00", duration: "2h", price: 1200, isRecommended: false },
+      ] as any,
+    });
     const result = TOOL_EFFECT_HANDLERS.select_transport(state, {
-      outbound: { id: "out" }, return: { id: "ret" },
+      outboundId: "out", returnId: "ret",
     });
     expect(result.selectedOutbound?.id).toBe("out");
     expect(result.selectedReturn?.id).toBe("ret");
   });
 
-  it("select_hotel writes selectedHotel", () => {
-    const state = makeState();
-    const result = TOOL_EFFECT_HANDLERS.select_hotel(state, { hotel: { name: "H1" } });
+  it("select_transport records error when id not found", () => {
+    const state = makeState({ candidateTransports: [] as any });
+    const result = TOOL_EFFECT_HANDLERS.select_transport(state, {
+      outboundId: "missing", returnId: "missing",
+    });
+    expect(result.selectedOutbound).toBeUndefined();
+    expect(result.errorMessages.some(e => e.includes("missing"))).toBe(true);
+  });
+
+  it("select_hotel resolves hotelId from candidateHotels", () => {
+    const state = makeState({
+      candidateHotels: [
+        { name: "H1", city: "X", address: "", starRating: 4, userRating: 8, pricePerNight: 500, amenities: [], distanceToCenterKm: 0 } as any,
+      ],
+    });
+    const result = TOOL_EFFECT_HANDLERS.select_hotel(state, { hotelId: "H1" });
     expect(result.selectedHotel?.name).toBe("H1");
   });
 });

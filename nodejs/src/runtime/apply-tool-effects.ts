@@ -1,4 +1,4 @@
-import type { Activity, UserPreferences } from "../types/index.js";
+import type { Activity, UserPreferences, Flight, Train } from "../types/index.js";
 import type {
   AgentState,
   PlanDayPlan,
@@ -7,6 +7,52 @@ import type {
   XhsNote,
 } from "./state.js";
 import { MAX_BUDGET_ROUNDS } from "./state.js";
+import type { TransportOption } from "../conversation/context.js";
+
+function flightToTransport(f: Flight): TransportOption {
+  return {
+    id: f.flightNo,
+    mode: "flight",
+    flightNo: f.flightNo,
+    airline: f.airline,
+    departStation: f.departureCity,
+    arriveStation: f.arrivalCity,
+    departTime: f.departureTime,
+    arriveTime: f.arrivalTime,
+    duration: `${f.durationHours}h`,
+    price: f.price,
+    isRecommended: false,
+  };
+}
+
+function trainToTransport(t: Train): TransportOption {
+  return {
+    id: t.trainNo,
+    mode: "train",
+    trainNo: t.trainNo,
+    departStation: t.departureCity,
+    arriveStation: t.arrivalCity,
+    departTime: t.departureTime,
+    arriveTime: t.arrivalTime,
+    duration: `${t.durationHours}h`,
+    price: t.price,
+    isRecommended: false,
+  };
+}
+
+function appendTransports(state: AgentState, items: TransportOption[]): AgentState {
+  const existing = state.candidateTransports ?? [];
+  const seen = new Set(existing.map(t => t.id));
+  const fresh = items.filter(t => t.id && !seen.has(t.id));
+  return { ...state, candidateTransports: [...existing, ...fresh] };
+}
+
+function findTransport(candidates: TransportOption[] | undefined, id: string): TransportOption | undefined {
+  if (!candidates || !id) return undefined;
+  return candidates.find(t =>
+    t.id === id || t.trainNo === id || t.flightNo === id,
+  );
+}
 
 export interface ToolResultLike {
   toolName: string;
@@ -14,6 +60,7 @@ export interface ToolResultLike {
   data?: unknown;
   error?: string;
   fallbackLevel?: number;
+  _jsonRepairError?: boolean;
 }
 
 type AgentStateField = keyof AgentState;
@@ -146,8 +193,35 @@ export const TOOL_EFFECT_HANDLERS: Record<string, StateReducer> = {
                                        : appendCandidates(s, "candidateRestaurants", d.items ?? [], d.scores ?? {}),
   search_xhs:               (s, d) => mergeXhsNotes(s, d.notes ?? d.top ?? []),
   search_travel_guides:     (s) => s,
-  select_transport:         (s, d) => ({ ...s, selectedOutbound: d.outbound, selectedReturn: d.return }),
-  select_hotel:             (s, d) => ({ ...s, selectedHotel: d.hotel }),
+  search_flights:           (s, d) => {
+    const flights: Flight[] = Array.isArray(d.flights) ? d.flights : [];
+    return appendTransports(s, flights.map(flightToTransport));
+  },
+  search_trains:            (s, d) => {
+    const trains: Train[] = Array.isArray(d.trains) ? d.trains : [];
+    return appendTransports(s, trains.map(trainToTransport));
+  },
+  select_transport:         (s, d) => {
+    const outbound = findTransport(s.candidateTransports, String(d.outboundId ?? ""));
+    const returnOpt = findTransport(s.candidateTransports, String(d.returnId ?? ""));
+    const errors = [...s.errorMessages];
+    if (!outbound) errors.push(`select_transport: 未找到去程 ${d.outboundId}`);
+    if (!returnOpt) errors.push(`select_transport: 未找到返程 ${d.returnId}`);
+    return {
+      ...s,
+      selectedOutbound: outbound,
+      selectedReturn: returnOpt,
+      errorMessages: errors,
+    };
+  },
+  select_hotel:             (s, d) => {
+    const id = String(d.hotelId ?? "");
+    const hotels = s.candidateHotels ?? [];
+    const hotel = hotels.find(h => h.name === id || (h as { id?: string }).id === id);
+    const errors = [...s.errorMessages];
+    if (!hotel) errors.push(`select_hotel: 未找到酒店 ${id}(候选 ${hotels.length} 家)`);
+    return { ...s, selectedHotel: hotel, errorMessages: errors };
+  },
   plan_transit:             (s, d) => appendTransit(s, d.dayIdx, d.transit),
   finalize_plan:            (s, d) => applyFinalizePlan(s, d),
 };

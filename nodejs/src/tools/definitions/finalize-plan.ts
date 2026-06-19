@@ -9,6 +9,73 @@ import {
   type PlanDayPlan,
 } from "./plan-schema.js";
 
+const CHAIN_BRANDS = new Set([
+  "麦当劳", "肯德基", "星巴克", "海底捞",
+  "必胜客", "汉堡王", "赛百味", "瑞幸咖啡", "蜜雪冰城",
+]);
+
+const LOCAL_SPECIALTY_KEYWORDS: Record<string, string[]> = {
+  "北京": ["烤鸭", "涮肉", "豆汁", "卤煮", "炸酱面", "爆肚"],
+  "上海": ["小笼", "生煎", "本帮", "蟹壳", "黄鱼", "腌笃鲜"],
+  "成都": ["火锅", "串串", "钵钵鸡", "担担面", "麻婆豆腐", "兔头"],
+  "西安": ["肉夹馍", "羊肉泡馍", "biang", "凉皮", "葫芦头"],
+  "广州": ["早茶", "肠粉", "烧腊", "叉烧", "煲仔饭", "云吞"],
+  "东京": ["寿司", "拉面", "天妇罗", "鳗鱼", "居酒屋", "烧鸟"],
+  "京都": ["怀石", "汤豆腐", "抹茶", "荞麦"],
+  "大阪": ["章鱼烧", "串炸", "御好烧"],
+};
+
+function isLocalSpecialty(name: string, description: string, city: string): boolean {
+  const keywords = LOCAL_SPECIALTY_KEYWORDS[city] ?? [];
+  const haystack = `${name} ${description}`;
+  return keywords.some(k => haystack.includes(k));
+}
+
+function validatePlanQuality(plan: TravelPlan, state: AgentState): string[] {
+  const errors: string[] = [];
+  const city = state.preferences?.preferredDestination ?? "";
+
+  for (const day of plan.dayPlans) {
+    if (day.morning && day.afternoon && !day.morning.transitToNext) {
+      errors.push(`第 ${day.dayIdx + 1} 天 morning→afternoon 缺 transitToNext`);
+    }
+    if (day.afternoon && day.evening && !day.afternoon.transitToNext) {
+      errors.push(`第 ${day.dayIdx + 1} 天 afternoon→evening 缺 transitToNext`);
+    }
+
+    const allActivities = [
+      ...(day.morning?.attractions ?? []),
+      ...(day.afternoon?.attractions ?? []),
+      ...(day.evening?.attractions ?? []),
+      ...day.dining.map(d => d.restaurant).filter(Boolean) as PlanDayPlan["dining"][number]["restaurant"][],
+    ];
+
+    for (const a of allActivities) {
+      if (!a) continue;
+      if (CHAIN_BRANDS.has(a.name)) {
+        errors.push(`第 ${day.dayIdx + 1} 天出现连锁品牌"${a.name}"(除非用户显式要求)`);
+      }
+    }
+  }
+
+  if (city) {
+    const allRestaurants = plan.dayPlans.flatMap(d =>
+      (d.dining ?? []).map(x => x.restaurant).filter(Boolean) as PlanDayPlan["dining"][number]["restaurant"][],
+    );
+    if (allRestaurants.length > 0) {
+      const localCount = allRestaurants.filter(r =>
+        r && isLocalSpecialty(r.name, r.description ?? "", city),
+      ).length;
+      const ratio = localCount / allRestaurants.length;
+      if (ratio > 0.6) {
+        errors.push(`本地特色占比 ${(ratio * 100).toFixed(0)}% > 60%(共 ${allRestaurants.length} 家,本地 ${localCount} 家)`);
+      }
+    }
+  }
+
+  return errors;
+}
+
 export interface FinalizePlanInput {
   rawJson: string;
 }
@@ -110,16 +177,28 @@ export async function executeFinalizePlan(
         toolName: "finalize_plan",
         success: false,
         error: `JSON repair exhausted: ${err.message}. Excerpt: ${err.rawExcerpt.slice(0, 200)}`,
+        _jsonRepairError: true,
       };
     }
     return {
       toolName: "finalize_plan",
       success: false,
       error: err instanceof Error ? err.message : String(err),
+      _jsonRepairError: true,
     };
   }
 
   const breakdown = computeBudgetBreakdown(plan, state);
+
+  const qualityErrors = validatePlanQuality(plan, state);
+  if (qualityErrors.length > 0) {
+    return {
+      toolName: "finalize_plan",
+      success: false,
+      error: `行程质量自检未通过,请修正后重新输出完整 JSON:\n${qualityErrors.map((e, i) => `${i + 1}. ${e}`).join("\n")}`,
+      _jsonRepairError: true,
+    };
+  }
 
   return {
     toolName: "finalize_plan",

@@ -1,6 +1,7 @@
 import type { SourceResolver } from "../../data-sources/source-resolver.js";
 import type { RegisteredTool } from "../types.js";
 import type { Logger } from "pino";
+import { HotelSearchInputSchema } from "../schemas/hotel.js";
 
 export function createSearchHotelsTool(resolver: SourceResolver, log?: Logger): RegisteredTool {
   return {
@@ -16,11 +17,11 @@ export function createSearchHotelsTool(resolver: SourceResolver, log?: Logger): 
         max_price_per_night: { type: "number", description: "每晚最高预算(元)" },
         max_star_rating: { type: "number", description: "最高星级限制" },
         preferredArea: { type: "string", description: "偏好区域,如:故宫附近、朝阳区" },
-        keyAttractions: { type: "array", items: { type: "string" }, description: "已选景点名称,用于计算最佳住宿位置" },
+        keyAttractions: { type: "array", items: { type: "string" }, description: "已选景点名称,用于过滤靠近景点的酒店" },
         geoConstraint: {
           type: "object",
           properties: {
-            maxDistanceKm: { type: "number", description: "离 keyAttractions 区域的最大距离(km),默认 5" },
+            maxDistanceKm: { type: "number", description: "离 keyAttractions 区域的最大距离(km),默认 5(基于 address 文本匹配,精确 Haversine 待 Hotel schema 补 geoLocation)" },
             preferNear: { type: "string", enum: ["transit", "center"], description: "偏好靠近地铁站/市中心" },
           },
         },
@@ -30,28 +31,58 @@ export function createSearchHotelsTool(resolver: SourceResolver, log?: Logger): 
     },
     metadata: { category: "search", timeout: 30_000 },
     execute: async (input) => {
+      const parsed = HotelSearchInputSchema.safeParse({
+        city: input.city,
+        checkIn: input.check_in,
+        checkOut: input.check_out,
+        adults: input.adults ?? 1,
+        maxPricePerNight: input.max_price_per_night,
+        maxStarRating: input.max_star_rating,
+        preferredArea: input.preferredArea,
+        keyAttractions: input.keyAttractions,
+        geoConstraint: input.geoConstraint,
+        preferredBrands: input.preferredBrands,
+      });
+
+      if (!parsed.success) {
+        return { success: false, data: null, error: `参数校验失败:${parsed.error.issues.map(i => i.path.join(".") + ":" + i.message).join("; ")}` };
+      }
+      const p = parsed.data;
+
       try {
         let hotels = await resolver.resolveHotels({
-          city: String(input.city ?? ""),
-          checkIn: String(input.check_in ?? ""),
-          checkOut: String(input.check_out ?? ""),
-          adults: Number(input.adults) || 1,
-          maxPricePerNight: input.max_price_per_night ? Number(input.max_price_per_night) : undefined,
-          maxStarRating: input.max_star_rating ? Number(input.max_star_rating) : undefined,
+          city: p.city,
+          checkIn: p.checkIn,
+          checkOut: p.checkOut,
+          adults: p.adults,
+          maxPricePerNight: p.maxPricePerNight,
+          maxStarRating: p.maxStarRating,
         });
 
-        if (input.preferredArea) {
-          const area = String(input.preferredArea);
+        if (p.preferredArea) {
+          const area = p.preferredArea;
           hotels = hotels.filter(h => h.address?.includes(area) || h.name?.includes(area));
         }
 
-        if (input.preferredBrands) {
-          const brands = (input.preferredBrands as string[]).map(b => b.toLowerCase());
+        if (p.preferredBrands?.length) {
+          const brands = p.preferredBrands.map(b => b.toLowerCase());
           hotels = hotels.filter(h => brands.some(b => h.name.toLowerCase().includes(b)));
         }
 
-        if (input.geoConstraint?.preferNear === "center") {
+        if (p.keyAttractions?.length) {
+          hotels = hotels.filter(h =>
+            p.keyAttractions!.some(k => h.address?.includes(k) || h.name?.includes(k)),
+          );
+        }
+
+        if (p.geoConstraint?.preferNear === "center") {
           hotels.sort((a, b) => a.distanceToCenterKm - b.distanceToCenterKm);
+        } else if (p.geoConstraint?.preferNear === "transit") {
+          hotels.sort((a, b) => {
+            const aNear = /地铁|站|metro|subway/i.test(a.address ?? "") ? 0 : 1;
+            const bNear = /地铁|站|metro|subway/i.test(b.address ?? "") ? 0 : 1;
+            return aNear - bNear;
+          });
         }
 
         const summary = hotels.length > 0
@@ -64,7 +95,7 @@ export function createSearchHotelsTool(resolver: SourceResolver, log?: Logger): 
           type: "hotel" as const,
         }));
 
-        log?.info({ city: input.city, count: hotels.length }, "search_hotels executed");
+        log?.info({ city: p.city, count: hotels.length, hasGeo: !!p.geoConstraint }, "search_hotels executed");
         return { success: true, data: { hotels, summary }, sources };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
