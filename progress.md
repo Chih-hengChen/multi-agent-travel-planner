@@ -2,6 +2,14 @@
 
 ## 已完成
 
+### RAG 第二轮实验:LLM 扩展 + Embedding 修复 (2026-06-19)
+全天完整实验记录在 `docs/rag-optimization-log.md` §8,核心发现:
+- **Embedding 一直没工作**:embedder 静默返回空向量,此前全部结果(67% Hit)是纯 BM25 关键词匹配跑出来的。根因是 RAG_EMBEDDING_* 未配置,fallback 到不支持的 Anthropic 端点。
+- **修复 embedding 后**:embedding-3(2048 维),向量搜索 V0=61%,反而比纯 BM25(67%)差。阈值 0.3 太宽松引入噪音。
+- **V5 从硬编码词典重建为 LLM 扩展**:streamChat 调用 glm-5.1,例句"故宫怎么玩"→"紫禁城游览攻略",救回 3 条 query(36→33 vs V0 向量版),但仍未超越纯 BM25。
+- **阶段结论**:BM25 是当前最强单一引擎;V5 LLM 扩展有价值但被向量拖后腿;下一步 = V5 LLM 扩展×BM25(不依赖向量)。
+- 修复:NDCG per-query 化 / 失败分析 city 过滤 / keywordFallback 升级 BM25 / embedder 错误日志 / .env 加 RAG_EMBEDDING_* 配置
+
 ### P1-B RAG 复盘 + 修复 (2026-06-19)
 对前轮 V0/V3/V4/V5 实验做诚实复盘,发现 5 个评测/算法缺陷,按 ROI 顺序修复并重测,完整记录在 `docs/rag-optimization-log.md` §6/§7:
 - 修 `scripts/rag-eval.ts` NDCG@10:从「整个 dataset 二元 hit 数组」改为 per-query 计算(V0 NDCG 从异常的 1.0000 → 合理的 0.3775)

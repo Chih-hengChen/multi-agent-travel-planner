@@ -4,29 +4,51 @@ import { MemoryVectorStore, type IVectorStore } from "./vector-store.js";
 import { ChromaVectorStore } from "./chroma-store.js";
 import { loadSeedDirectory, convertBaikeToDocs, convertXhsToDocs } from "./corpus-loader.js";
 import { settings } from "../config/settings.js";
+import { streamChat } from "../api/llm-client.js";
 import type { Logger } from "pino";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
 export type RagVariant = "v0" | "v1" | "v2" | "v3" | "v4" | "v5";
 
-const QUERY_SYNONYMS: Record<string, string[]> = {
-  "美食": ["必吃", "推荐餐厅", "吃货", "好吃的"],
-  "景点": ["必去", "打卡", "游玩", "地标"],
-  "攻略": ["旅游", "旅行", "自由行"],
-  "酒店": ["住宿", "民宿", "客栈"],
-  "交通": ["地铁", "公交", "机场", "高铁"],
-  "路线": ["行程", "安排", "怎么玩"],
-};
+const expansionCache = new Map<string, string[]>();
 
-function expandQuery(query: string): string[] {
-  const queries = new Set<string>([query]);
-  for (const [key, syns] of Object.entries(QUERY_SYNONYMS)) {
-    if (query.includes(key)) {
-      for (const s of syns) queries.add(s);
-    }
+const EXPANSION_PROMPT = `你是旅游领域专家。给定用户的旅行问题，生成 3 个语义等价但用词不同的变体，覆盖旅游攻略里可能出现的表达方式。
+规则：
+- 替换地名别名（如"故宫"→"紫禁城"、"蓉城"→"成都"）
+- 替换同义表达（如"怎么玩"→"游览攻略"、"必吃"→"美食推荐"）
+- 保持原问题意图不变
+- 严格只输出 3 行变体，每行一个，不编号、不解释、不输出原问题
+
+用户问题：`;
+
+async function expandQuery(query: string): Promise<string[]> {
+  const cached = expansionCache.get(query);
+  if (cached) return cached;
+
+  try {
+    const result = await streamChat(
+      [{ role: "user", content: EXPANSION_PROMPT + query }],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    const text = result.assistantContent
+      .filter(b => b.type === "text")
+      .map(b => (b as { type: "text"; text: string }).text)
+      .join("");
+    const expansions = text
+      .split("\n")
+      .map(l => l.replace(/^[\d\.\-\s]+/, "").trim())
+      .filter(l => l.length > 1 && l !== query);
+    const out = [...new Set([query, ...expansions])];
+    expansionCache.set(query, out);
+    return out;
+  } catch (e) {
+    console.error("[rag] expandQuery LLM error:", (e as Error).message);
+    return [query];
   }
-  return [...queries];
 }
 
 function tokenizeZh(text: string): string[] {
@@ -133,28 +155,27 @@ export class RagSource {
       if (!entries?.length) return [];
       const city = params.city;
       const category = params.category && params.category !== "all" ? params.category : undefined;
-      const raw = params.query.toLowerCase();
-      const chars = raw.replace(/[\s,，。、！？:：;；\-—()（）""''「」【】]+/g, "").split("");
-      const bigrams: string[] = [];
-      for (let i = 0; i < chars.length - 1; i++) bigrams.push(chars[i] + chars[i + 1]);
-      const tokens = [...new Set([...chars, ...bigrams])].filter((t) => t.length > 0);
+      const filtered = entries.filter((e) => {
+        if (city && e.doc.metadata.city !== city) return false;
+        if (category && e.doc.metadata.category !== category) return false;
+        return true;
+      });
+      if (filtered.length === 0) return [];
 
-      return entries
-        .filter((e) => {
-          if (city && e.doc.metadata.city !== city) return false;
-          if (category && e.doc.metadata.category !== category) return false;
-          return true;
-        })
-        .map((e) => {
-          const content = e.doc.content.toLowerCase();
-          const title = e.doc.metadata.title.toLowerCase();
-          let score = 0;
-          for (const t of tokens) {
-            if (content.includes(t)) score += 1;
-            if (title.includes(t)) score += 2;
-          }
-          return { document: e.doc, score: tokens.length > 0 ? score / tokens.length : 0 };
-        })
+      const totalDocs = filtered.length;
+      const avgDocLen = filtered.reduce((s, e) => s + e.doc.content.length, 0) / totalDocs;
+      const queryTokens = tokenizeZh(params.query);
+      const df = new Map<string, number>();
+      for (const t of queryTokens) {
+        let n = 0;
+        for (const e of filtered) if (e.doc.content.toLowerCase().includes(t)) n++;
+        df.set(t, n);
+      }
+      return filtered
+        .map((e) => ({
+          document: e.doc,
+          score: bm25Score(queryTokens, e.doc.content, e.doc.content.length, avgDocLen, df, totalDocs),
+        }))
         .filter((r) => r.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, params.maxResults ?? 5);
@@ -169,7 +190,7 @@ export class RagSource {
     }
 
     if (this.variant === "v5") {
-      const expansions = expandQuery(params.query);
+      const expansions = await expandQuery(params.query);
       const perQueryResults = await Promise.all(
         expansions.map(q => this.embedder.embed(q).then(v => this.store.search(v, topK, {
           city: params.city,
@@ -221,7 +242,14 @@ export class RagSource {
       };
       const vecNorm = minMax(vecRaw);
       const bmNorm = minMax(bmRaw);
-      const fused = all.map((r, i) => ({ ...r, score: 0.6 * vecNorm[i] + 0.4 * bmNorm[i] }));
+      const maxVec = Math.max(...vecRaw);
+      if (maxVec < SIMILARITY_THRESHOLD) {
+        return all.map((r, i) => ({ ...r, score: bmNorm[i] }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, params.maxResults ?? 5);
+      }
+      const alpha = Math.max(0.05, Math.min(0.6, maxVec * 2));
+      const fused = all.map((r, i) => ({ ...r, score: alpha * vecNorm[i] + (1 - alpha) * bmNorm[i] }));
       return fused.sort((a, b) => b.score - a.score).slice(0, params.maxResults ?? 5);
     }
 
