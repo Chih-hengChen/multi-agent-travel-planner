@@ -16,6 +16,7 @@ interface EvalResult {
   metrics: EvalMetrics;
   perCategory: Record<string, { hitRateAt5: number; mrr: number }>;
   perQueryHits?: number[];
+  perQueryNdcg?: number[];
 }
 
 function bootstrapCI(a: number[], b: number[], iterations: number): { delta: number; pValue: number } {
@@ -63,10 +64,14 @@ function main() {
       const isPct = key !== "avgLatencyMs";
       const aArr = key === "hitRateAt5" || key === "hitRateAt10"
         ? (baseline.perQueryHits ?? [b])
-        : key === "avgLatencyMs" ? [b] : [b];
+        : key === "ndcgAt10"
+          ? (baseline.perQueryNdcg ?? [b])
+          : key === "avgLatencyMs" ? [b] : [b];
       const bArr = key === "hitRateAt5" || key === "hitRateAt10"
         ? (v.perQueryHits ?? [val])
-        : key === "avgLatencyMs" ? [val] : [val];
+        : key === "ndcgAt10"
+          ? (v.perQueryNdcg ?? [val])
+          : key === "avgLatencyMs" ? [val] : [val];
       const ci = bootstrapCI(aArr, bArr, 1000);
       const delta = val - b;
       const sig = key === "avgLatencyMs" ? delta < -5 : Math.abs(delta) >= 0.03 && ci.pValue < 0.05;

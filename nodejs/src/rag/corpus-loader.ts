@@ -118,7 +118,7 @@ export function loadFromJSONL(filePath: string): RagDocument[] {
 }
 
 export function loadSeedDirectory(dataDir?: string): RagDocument[] {
-  const dir = resolve(dataDir ?? process.cwd(), "data/guides");
+  const dir = dataDir ? resolve(dataDir) : resolve(process.cwd(), "data/guides");
   const docs: RagDocument[] = [];
   try {
     for (const file of readdirSync(dir)) {

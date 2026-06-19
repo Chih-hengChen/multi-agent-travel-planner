@@ -8,7 +8,7 @@ import type { Logger } from "pino";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
-export type RagVariant = "v0" | "v3" | "v4" | "v5";
+export type RagVariant = "v0" | "v1" | "v2" | "v3" | "v4" | "v5";
 
 const QUERY_SYNONYMS: Record<string, string[]> = {
   "美食": ["必吃", "推荐餐厅", "吃货", "好吃的"],
@@ -67,14 +67,24 @@ function bm25Score(
 
 export class RagSource {
   private embedder = new Embedder();
-  private store: IVectorStore = settings.RAG_CHROMA_URL ? new ChromaVectorStore(settings.RAG_CHROMA_URL) : new MemoryVectorStore("travel_guides");
+  private store: IVectorStore;
   private initialized = false;
   private log?: Logger;
   private readonly variant: RagVariant;
+  private readonly corpusDir?: string;
 
-  constructor(log?: Logger, variant: RagVariant = "v0") {
+  constructor(log?: Logger, variant: RagVariant = "v0", corpusDir?: string) {
     this.log = log;
     this.variant = variant;
+    this.corpusDir = corpusDir;
+    const persistKey = corpusDir ? `travel_guides_${variant}` : undefined;
+    if (settings.RAG_CHROMA_URL) {
+      this.store = new ChromaVectorStore(settings.RAG_CHROMA_URL);
+    } else if (persistKey) {
+      this.store = new MemoryVectorStore(persistKey);
+    } else {
+      this.store = new MemoryVectorStore("travel_guides");
+    }
   }
 
   async ensureInit(): Promise<void> {
@@ -83,12 +93,12 @@ export class RagSource {
     if (!settings.RAG_ENABLED) { this.log?.info("rag: disabled"); return; }
 
     const count = await this.store.count();
-    this.log?.info({ storeType: settings.RAG_CHROMA_URL ? "chroma" : "memory", docs: count }, "rag: ready");
+    this.log?.info({ storeType: settings.RAG_CHROMA_URL ? "chroma" : "memory", docs: count, variant: this.variant }, "rag: ready");
 
     if (count === 0) {
-      const seeds = loadSeedDirectory();
+      const seeds = loadSeedDirectory(this.corpusDir);
       if (seeds.length > 0) {
-        this.log?.info({ count: seeds.length }, "rag: loading seed JSONL");
+        this.log?.info({ count: seeds.length, corpusDir: this.corpusDir ?? "data/guides" }, "rag: loading seed JSONL");
         await this.addDocuments(seeds);
       }
     }
@@ -117,69 +127,74 @@ export class RagSource {
       });
     }
 
-    // Keyword fallback: character-level token matching for Chinese
-    if (!hasVector || results.every((r) => r.score < SIMILARITY_THRESHOLD)) {
+    const keywordFallback = (): RagSearchResult[] => {
       const store = this.store as any;
       const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries;
-      if (entries?.length) {
-        const city = params.city;
-        const category = params.category && params.category !== "all" ? params.category : undefined;
-        // Tokenize: individual chars + bigrams + whole words
-        const raw = params.query.toLowerCase();
-        const chars = raw.replace(/[\s,，。、！？:：;；\-—()（）""''「」【】]+/g, "").split("");
-        const bigrams: string[] = [];
-        for (let i = 0; i < chars.length - 1; i++) bigrams.push(chars[i] + chars[i + 1]);
-        const tokens = [...new Set([...chars, ...bigrams])].filter((t) => t.length > 0);
+      if (!entries?.length) return [];
+      const city = params.city;
+      const category = params.category && params.category !== "all" ? params.category : undefined;
+      const raw = params.query.toLowerCase();
+      const chars = raw.replace(/[\s,，。、！？:：;；\-—()（）""''「」【】]+/g, "").split("");
+      const bigrams: string[] = [];
+      for (let i = 0; i < chars.length - 1; i++) bigrams.push(chars[i] + chars[i + 1]);
+      const tokens = [...new Set([...chars, ...bigrams])].filter((t) => t.length > 0);
 
-        return entries
-          .filter((e) => {
-            if (city && e.doc.metadata.city !== city) return false;
-            if (category && e.doc.metadata.category !== category) return false;
-            return true;
-          })
-          .map((e) => {
-            const content = e.doc.content.toLowerCase();
-            const title = e.doc.metadata.title.toLowerCase();
-            let score = 0;
-            for (const t of tokens) {
-              if (content.includes(t)) score += 1;
-              if (title.includes(t)) score += 2;
-            }
-            return { document: e.doc, score: tokens.length > 0 ? score / tokens.length : 0 };
-          })
-          .filter((r) => r.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, params.maxResults ?? 5);
-      }
-    }
+      return entries
+        .filter((e) => {
+          if (city && e.doc.metadata.city !== city) return false;
+          if (category && e.doc.metadata.category !== category) return false;
+          return true;
+        })
+        .map((e) => {
+          const content = e.doc.content.toLowerCase();
+          const title = e.doc.metadata.title.toLowerCase();
+          let score = 0;
+          for (const t of tokens) {
+            if (content.includes(t)) score += 1;
+            if (title.includes(t)) score += 2;
+          }
+          return { document: e.doc, score: tokens.length > 0 ? score / tokens.length : 0 };
+        })
+        .filter((r) => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, params.maxResults ?? 5);
+    };
 
     const filtered = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
 
+    if (!hasVector) return keywordFallback();
+
+    if (this.variant === "v0" && filtered.length === 0) {
+      return keywordFallback();
+    }
+
     if (this.variant === "v5") {
       const expansions = expandQuery(params.query);
-      const perQueryScores = await Promise.all(
+      const perQueryResults = await Promise.all(
         expansions.map(q => this.embedder.embed(q).then(v => this.store.search(v, topK, {
           city: params.city,
           category: params.category && params.category !== "all" ? params.category : undefined,
         }))),
       );
-      const bestById = new Map<string, number>();
-      for (const list of perQueryScores) {
-        for (const r of list) {
-          const prev = bestById.get(r.document.id) ?? 0;
-          if (r.score > prev) bestById.set(r.document.id, r.score);
-        }
-      }
-      return filtered
-        .map(r => ({ ...r, score: bestById.get(r.document.id) ?? r.score }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, params.maxResults ?? 5);
+      const bestById = new Map<string, RagSearchResult>();
+      const merge = (r: RagSearchResult) => {
+        const prev = bestById.get(r.document.id);
+        if (!prev || r.score > prev.score) bestById.set(r.document.id, r);
+      };
+      for (const r of results) merge(r);
+      for (const list of perQueryResults) for (const r of list) merge(r);
+      const merged = [...bestById.values()]
+        .filter(r => r.score >= SIMILARITY_THRESHOLD)
+        .sort((a, b) => b.score - a.score);
+      if (merged.length === 0) return keywordFallback();
+      return merged.slice(0, params.maxResults ?? 5);
     }
 
     if (this.variant === "v3") {
       const store = this.store as any;
       const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries ?? [];
-      const matched = new Map(filtered.map(r => [r.document.id, r]));
+      const matched = new Map<string, RagSearchResult>();
+      for (const r of results) matched.set(r.document.id, r);
       for (const e of entries) {
         if (params.city && e.doc.metadata.city !== params.city) continue;
         if (!matched.has(e.doc.id)) {
@@ -196,16 +211,22 @@ export class RagSource {
         for (const r of all) if (r.document.content.toLowerCase().includes(t)) n++;
         df.set(t, n);
       }
-      const fused = all.map(r => {
-        const bm = bm25Score(queryTokens, r.document.content, r.document.content.length, avgDocLen, df, totalDocs);
-        const bmNorm = totalDocs > 0 ? bm / (1 + bm) : 0;
-        const vector = r.score;
-        return { ...r, score: 0.6 * vector + 0.4 * bmNorm };
-      });
+      const bmRaw = all.map(r => bm25Score(queryTokens, r.document.content, r.document.content.length, avgDocLen, df, totalDocs));
+      const vecRaw = all.map(r => r.score);
+      const minMax = (xs: number[]): number[] => {
+        const lo = Math.min(...xs);
+        const hi = Math.max(...xs);
+        const span = hi - lo;
+        return span === 0 ? xs.map(() => 0.5) : xs.map(x => (x - lo) / span);
+      };
+      const vecNorm = minMax(vecRaw);
+      const bmNorm = minMax(bmRaw);
+      const fused = all.map((r, i) => ({ ...r, score: 0.6 * vecNorm[i] + 0.4 * bmNorm[i] }));
       return fused.sort((a, b) => b.score - a.score).slice(0, params.maxResults ?? 5);
     }
 
     if (this.variant === "v4") {
+      if (filtered.length === 0) return keywordFallback();
       const lambda = 0.7;
       const candidates = [...filtered].sort((a, b) => b.score - a.score);
       const selected: RagSearchResult[] = [];

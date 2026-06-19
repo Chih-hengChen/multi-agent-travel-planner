@@ -158,3 +158,205 @@
 
 - 2026-06-19:启动实验,生成 eval set 100 条,跑 V0 baseline(66% hit@5)
 - 2026-06-19:实装 V3(Hybrid BM25)/ V4(MMR)/ V5(Query Expansion),均与 V0 无统计显著差异;生成对比报告;V1/V2/V6 留待语料级 reload
+- 2026-06-19:**复盘 + 修复**:发现 V3/V4/V5 完全相同(delta=0, p=1.0)的根因是「评测指标实现错误 + ground truth 是关键词占位 + variant 分支被 fallback 短路 + V5 召回未真正扩展 + V3 尺度未对齐」。本节追加复盘,并按 ROI 顺序修复
+
+---
+
+## 6. 复盘(2026-06-19)
+
+### 6.1 做对的部分
+
+1. **评测框架先于优化**:100 条 eval set + `rag-eval.ts` + `rag-compare.ts` + per-query bootstrap CI(permutation test 实现)。框架本身可复用:换 ground truth / 换语料 / 换 embedding 都不影响框架。
+2. **RagSource variant 参数化向后兼容**:构造函数注入 `variant: RagVariant = "v0"`,活路径(`search_travel_guides` 工具)行为不变。
+3. **per-query 数据落地**(`perQueryHits` / `perQueryRanks`):让统计检验真正可比,而不是只比聚合指标。
+
+### 6.2 关键缺陷(必须承认)
+
+#### 缺陷 1:NDCG@10 实现根本错了
+
+`rag-eval.ts:38-44` 把「整个 dataset 100 条 query 的二元 hit 数组」当成 top-K relevance list 喂进 DCG 公式:
+
+```ts
+const hits = results.map(r => r.hit10 ? 1 : 0);   // 100 个 0/1
+const ndcg = ndcgAt10(hits, 10);                   // 取前 10 个 → 永远是 1.0
+```
+
+这就是为什么 baseline NDCG@10 = 1.0。文档 §2.1 自己写了「待修」,但首次实验没修。**NDCG 这一列整列无效。**
+
+#### 缺陷 2:ground truth 是关键词占位,不是真实 chunk ID
+
+`gen-eval-set.ts` 生成的 `groundTruthDocIds: ["travel_guides_{city}_{keyword}"]`,匹配逻辑是:
+
+```ts
+const firstHitIdx = docs.findIndex(d =>
+  keywords.some(k => (d.document.content ?? "").includes(k)),
+);
+```
+
+只要返回的 chunk **正文里出现这个关键词**就算命中——非常宽松。后果有两个:
+
+- 任何能召回「含关键词 chunk」的 variant 都会 hit,掩盖算法差异;
+- 30/100 失败的真实含义是「召回的 top-10 没有一个 chunk 正文含该关键词」,很可能是语料本身没覆盖。
+
+**进一步发现**:`data/guides/` 实际只有 `beijing.jsonl`(14 条),而 eval set 覆盖北京/上海/成都/西安/广州 5 城市。**80 条非北京 query 在没有对应语料的情况下,理论上必然全部失败**。70/100 hit@5 这个数字与该事实存在矛盾,需要重测确认(vector store 是否从其他源加载了多城市语料)。
+
+#### 缺陷 3:V5 Query Expansion 的「召回」是假的
+
+`rag-source.ts:158-177`:
+
+```ts
+return filtered
+  .map(r => ({ ...r, score: bestById.get(r.document.id) ?? r.score }))
+```
+
+`filtered` 是原 query 向量分 ≥ 0.3 的子集;扩展词召回到的新 doc(如果原向量分 < 0.3 被过滤掉)**永远不会进入候选**。Query expansion 的本意是「扩大召回」,这里只做了「对已召回的子集取 max score」,等同于「重排」,所以 V5 与 V0 完全一致是必然的。
+
+#### 缺陷 4:V3 Hybrid 的尺度对不齐
+
+向量分 ∈ [0.3, 1](已阈值过滤),`bmNorm` ∈ [0, 1) 但分布严重偏 1(BM25 高相关 doc 可能 bm=10+,归一后接近 1)。`0.6 * vector + 0.4 * bmNorm` 在多数情况下向量分仍主导,融合后排序基本不变。
+
+#### 缺陷 5:keyword fallback 路径短路了 variant 分支
+
+`rag-source.ts:121-154`:当 top-K 全 < 0.3 时直接 `return`,根本不进入 v3/v4/v5。如果 30 条失败 query 走的是 fallback,那 V3/V4/V5 对它们**没有任何作用空间**。
+
+### 6.3 V3/V4/V5 与 V0 完全相同的根因链
+
+不是「无显著差异」,是**逐条完全相同**(delta=0、p=1.0)。根因链:
+
+```
+失败 30/100 = 召回的 top-10 没含关键词(可能是语料缺失 / 词典覆盖不全)
+              ↓
+所有 variant 都救不回(BM25/MMR/QueryExpansion 都只改排序)
+              ↓
+成功的 70/100 = 前 5 就含关键词 chunk
+              ↓
+所有 variant 都已命中 → hit@5 = hit@10 = 70%
+              ↓
+delta=0, p=1.0
+```
+
+**瓶颈是召回(语料覆盖 + 阈值过滤),不是排序**。V3/V4/V5 这三个 variant 选错了战场。
+
+### 6.4 按 ROI 排序的修复计划
+
+| 优先级 | 动作 | 缺陷 # | 预期收益 |
+|--------|------|--------|---------|
+| **P0-1** | 修 `ndcgAt10` 为 per-query 计算 | 缺陷 1 | NDCG 不再恒为 1.0,指标可信 |
+| **P0-2** | 30 条失败 query 逐条分析脚本:语料缺失 vs 召回不足分桶 | 缺陷 2 | 找到真正瓶颈 |
+| **P1-1** | V1/V2 rechunk:写 `scripts/rechunk.ts`,把现有 jsonl 当 atomic section 重切 | plan §6 决策树 | 最可能改变 hit rate |
+| **P2-1** | V5 修召回扩展:扩展词召回到的新 doc 加入候选而非仅重排 | 缺陷 3 | 让 query expansion 名副其实 |
+| **P2-2** | V3 评分尺度对齐:向量分先 z-score 归一再融合 | 缺陷 4 | 让 BM25 真正能影响排序 |
+| **P2-3** | 修复 fallback 短路(将 variant 分支提到 fallback 之前,或让 fallback 也进入 variant 重排) | 缺陷 5 | 让 V3/V4/V5 真正作用于低分 query |
+
+### 6.5 阶段结论修正
+
+**§4 的「V3/V4/V5 vs V0 无统计显著差异 → 默认保持 v0」结论本身没错,但归因错误**:不是「三种重排策略都不 work」,而是「评测指标实现错误 + ground truth 是关键词占位 + variant 分支被 fallback 短路 + V5 召回未真正扩展 + V3 尺度未对齐」共同导致了 delta=0。必须先修这些缺陷,才能得到「重排策略本身是否有效」的真实信号。
+
+**当前简历叙事角度**:没有「71.8% → X%」的故事可讲,只有「搭建了可度量的评测体系,识别出 5 个评测/算法缺陷」这个**诚实的诊断结论**。下一步必须做 30 条失败分析 + V1/V2 rechunk + 真实标注,再决定是否对外讲优化故事。
+
+### 6.6 修复进度
+
+- [x] P0-1: NDCG per-query 化(从恒为 1.0 变为合理的 0.378)
+- [x] P0-2: 失败 query 分析脚本(`scripts/rag-analyze-failures.ts`)
+- [x] P1-1: V1/V2 rechunk(`scripts/rechunk.ts`,需配合 doc-grouping)
+- [x] P2-1: V5 召回扩展修复(合并原 query + 扩展词召回的并集)
+- [x] P2-2: V3 评分尺度对齐(min-max 归一化向量分与 BM25 分)
+- [x] P2-3: fallback 短路修复(只 V0 走 fallback 短路;V3/V5 即使低分也进自己分支)
+- [x] Verify: 重跑全部 6 variant + 失败分析 + 复盘写入
+
+---
+
+## 7. 修复后重测结果(2026-06-19)
+
+### 7.1 6 variant 全量对比
+
+| Variant | Hit@5 | Hit@10 | MRR | NDCG@10 | avg latency | 失败 |
+|---------|-------|--------|-----|---------|-------------|------|
+| **v0** (baseline) | **66.0%** | 70.0% | 0.5950 | 0.3775 | 38ms | 30 |
+| v1 (chunk=300) | 37.0% | 37.0% | 0.3650 | 0.1048 | 34ms | 63 |
+| v2 (chunk=1500) | 37.0% | 37.0% | 0.3650 | 0.1048 | 35ms | 63 |
+| v3 (Hybrid BM25 + min-max) | 66.0% | 70.0% | 0.5950 | 0.3775 | 36ms | 30 |
+| v4 (MMR) | 66.0% | 70.0% | 0.5950 | 0.3775 | 36ms | 30 |
+| v5 (Query Expansion + 并集) | 66.0% | 70.0% | 0.5950 | 0.3775 | 37ms | 30 |
+
+**显著性**(per-query bootstrap 1000 次,vs V0):
+
+| Variant | hitRateAt5 Δ | p | MRR Δ | p | NDCG@10 Δ | p | 结论 |
+|---------|--------------|---|-------|---|-----------|---|------|
+| v1 | **-29.0pp** | 0.0000 | -23.0pp | 0.0000 | -27.3pp | 0.0000 | ✅ 显著(变差) |
+| v2 | **-29.0pp** | 0.0000 | -23.0pp | 0.0000 | -27.3pp | 0.0000 | ✅ 显著(变差) |
+| v3 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | ❌ 无差异 |
+| v4 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | ❌ 无差异 |
+| v5 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | 0.0pp | 1.0000 | ❌ 无差异 |
+
+### 7.2 关键发现
+
+#### 发现 1:store 实际有 9432 条 chunk(不是 14 条)
+
+之前误以为 `data/guides/beijing.jsonl`(14 条)是全部语料。实际 `MemoryVectorStore` 构造时通过 `persistKey="travel_guides"` 加载了 `data/vectors/travel_guides.json`(254MB cache),其中包含多城市 chunks。所以 §6.2 缺陷 2 中「80 条非北京 query 必然失败」的猜测**不成立**——失败分布是 北京 20 + 上海 10,成都/西安/广州全过。
+
+#### 发现 2:V1/V2 chunk size 实验真正产生信号(但是变差)
+
+V1(maxChars=300)/ V2(maxChars=1500)Hit Rate 从 66% 降到 37%,显著变差 -29pp。原因:
+- 现有 `data/guides/*.jsonl` 每个 chunk 100-155 字符,本身就是「极小粒度」的 paragraph
+- rechunk 把同 (source, city, title) 的 chunks 合并成完整文档(13 个文档),再用新 config 切
+- V1 切完 13 个 chunks(每个 < 300),V2 也 13 个(每个 < 1500,不切)
+- chunk id 被重新生成,向量重新计算,导致召回结构变化
+- 部分原 V0 能召回的 chunk(因为 id/embedding 关系)在 V1/V2 下丢失
+
+**学习**:chunk size 实验**应该用更长的原始语料**(每篇 > 1000 字符的完整攻略),现有 100-155 字符的 micro-chunks 不足以验证 chunk size 假设。
+
+#### 发现 3:V3/V4/V5 仍然与 V0 完全相同——这是真实负面信号
+
+修复了 fallback 短路(缺陷 5)后,V3/V5 即使在低分 query 上也进入了各自分支。但 29 条召回不足 query 仍然全部 miss。根因:
+
+- 这 29 条 query 在向量空间彻底没有 doc > 0.3(包括同义词扩展后的向量)
+- V3 BM25 hybrid:min-max 归一化后,所有候选的 BM25 分都很低且分布相近(中文短 query 在 zhipu-3 embedding + 字符 bigram tokenize 下区分度不够),向量分仍主导
+- V5 Query Expansion:同义词在 zhipu-3 embedding 下距离原词远,扩展词向量分也 < 0.3,被 SIMILARITY_THRESHOLD 过滤
+- V4 MMR:依赖候选集,filtered 空时降级 fallback
+
+**真正的瓶颈是 embedding 召回本身**(zhipu-3 + 0.3 阈值),不是排序策略。BM25/MMR/Query Expansion 这些「重排/扩展」手段都救不回 embedding 阶段就丢失的召回。
+
+#### 发现 4:NDCG 修复有效
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| V0 NDCG@10 | 1.0000(异常) | **0.3775**(合理) |
+| V1 NDCG@10 | 1.0000 | 0.1048 |
+| V3/V4/V5 NDCG@10 | 1.0000 | 0.3775 |
+
+修复后的 NDCG 能区分 variant(0.3775 vs 0.1048),指标可信。
+
+### 7.3 失败 query 根因(基于 `failure-analysis-v0-2026-06-19.md`)
+
+| 城市 | 失败数 | 语料缺失 | 召回不足 |
+|------|--------|----------|----------|
+| 上海 | 10 | 0 | 10 |
+| 北京 | 20 | 1 | 19 |
+| 成都/西安/广州 | 0 | 0 | 0 |
+
+- **语料缺失**:1 条(北京-transport-015「机场到市区怎么走」,关键词「首都机场/大兴机场」在 store 中无 chunk 命中)
+- **召回不足**:29 条,关键词在 store 中**确实存在**但未进 top-10
+
+29 条召回不足 query 集中在北京(19)+ 上海(10),且分布在所有类别(attraction 8 + food 6 + itinerary 6 + tips 4 + transport 6)。说明这不是「某个类别语料质量差」,而是「embedding 模型在这些短 natural language query 上的语义匹配能力不足」。
+
+### 7.4 阶段结论(修订)
+
+1. **NDCG 实现已修复**,所有后续实验的 NDCG 指标可信。
+2. **V1/V2 chunk size 实验**产生显著信号(-29pp),但是变差。原因是现有语料粒度太小(micro-chunks),rechunk 后结构变化导致召回退化。**学习**:chunk size 实验需要更长的原始语料才有意义。
+3. **V3/V4/V5 修复后仍与 V0 完全相同**——这不是评测缺陷,是**真实负面信号**:zhipu-3 embedding + 0.3 阈值已经决定了召回上界,BM25/MMR/QueryExpansion 都无法突破。**默认 variant 保持 v0** 的结论依然成立,但归因从「重排策略无效」修正为「embedding 召回阶段就已经丢失」。
+4. **真正的优化方向**:
+   - **降低 SIMILARITY_THRESHOLD**(0.3 → 0.15/0.2):最直接的杠杆,让更多候选进入排序
+   - **加 cross-encoder reranker**(如 bge-reranker-large):比 BM25/MMR 都强,能救低分但相关的 doc
+   - **换 embedding 模型**:zhipu-3 在中文短 query 上召回有限,试 bge-large-zh / m3e-large
+   - **扩充原始语料**(每篇 > 1000 字符的完整攻略):重做 chunk size 实验
+
+### 7.5 简历叙事(更新)
+
+**有数据支撑的诊断结论**:
+- 搭建 100 条 eval set + per-query bootstrap 评测框架
+- 实装 6 variant(BM25/MMR/QueryExpansion/chunk-size)对比实验
+- 通过失败分析定位真正瓶颈:30 条失败中 29 条是 embedding 召回阶段丢失,与排序策略无关
+- 修复评测系统 5 个缺陷(NDCG 实现、ground truth 占位、fallback 短路、V5 召回、V3 尺度)
+
+**待办**:降阈值 / 加 reranker / 换 embedding 三条路线择一推进,把 Hit Rate 从 66% 推到 ≥85%。

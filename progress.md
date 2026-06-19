@@ -2,6 +2,16 @@
 
 ## 已完成
 
+### P1-B RAG 复盘 + 修复 (2026-06-19)
+对前轮 V0/V3/V4/V5 实验做诚实复盘,发现 5 个评测/算法缺陷,按 ROI 顺序修复并重测,完整记录在 `docs/rag-optimization-log.md` §6/§7:
+- 修 `scripts/rag-eval.ts` NDCG@10:从「整个 dataset 二元 hit 数组」改为 per-query 计算(V0 NDCG 从异常的 1.0000 → 合理的 0.3775)
+- 新增 `scripts/rag-analyze-failures.ts`:扫描 store 区分「语料缺失 vs 召回不足」(30 条失败 = 1 缺失 + 29 召回不足)
+- 新增 `scripts/rechunk.ts`:V1/V2 chunk size 实验语料重切(按 source/city/title 聚合)
+- 修 `src/rag/rag-source.ts`:V5 召回扩展(原 query + 扩展词召回并集)/ V3 min-max 尺度对齐 / fallback 短路(只 V0 走 fallback,V3/V5 即使低分也进分支)/ RagVariant 扩展为 v0-v5 / 加 corpusDir 参数避免污染 V0 cache
+- 修 `src/rag/corpus-loader.ts`:`loadSeedDirectory(dataDir)` 改为直接目录而非 cwd
+- 重测 6 variant:V1/V2 显著变差(-29pp,因现有 micro-chunks 粒度太小);V3/V4/V5 修复后仍与 V0 完全相同——真实负面信号,瓶颈是 embedding 召回阶段
+- 阶段结论:默认保持 v0;下一步方向 = 降 SIMILARITY_THRESHOLD / 加 cross-encoder reranker / 换 embedding 模型
+
 ### P1-B RAG variant 实验 (2026-06-19)
 基于契约 §1 跑 V0/V3/V4/V5 4 个 variant 实验,完整记录在 `docs/rag-optimization-log.md`:
 - `98187eb` feat(rag): V0/V3/V4/V5 variant experiments + per-query bootstrap
