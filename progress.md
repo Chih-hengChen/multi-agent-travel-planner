@@ -2,6 +2,16 @@
 
 ## 已完成
 
+### P1-B RAG variant 实验 (2026-06-19)
+基于契约 §1 跑 V0/V3/V4/V5 4 个 variant 实验,完整记录在 `docs/rag-optimization-log.md`:
+- `98187eb` feat(rag): V0/V3/V4/V5 variant experiments + per-query bootstrap
+- RagSource 新增 `variant` 参数(默认 v0 向后兼容),实装 V3 Hybrid BM25 / V4 MMR / V5 Query Expansion
+- rag-eval.ts 输出 perQueryHits/perQueryRanks(供 bootstrap);rag-compare.ts 修 ESM require bug + 用 perQuery 数组做 CI
+- 4 个 variant 在 100 条 eval set 上 hit@5 均=66%、MRR=0.5950,**无统计显著差异**(delta=0, p=1.0)
+- 失败 30/100 query 多因语料缺失,V3/V4/V5 重排救不回
+- V1/V2/V6 需重新生成语料 chunk,留待续作
+- 结论:默认 variant 保持 v0;距离 Hit@5≥85% 目标差 19pp,需语料扩容 + 真实标注 + chunk size 实验
+
 ### P0-C §3 Pipeline 删除 (2026-06-19)
 按契约 §3 完成废弃 Pipeline 和 deprecated Agents 清理:
 - 删除:`orchestrator/pipeline.ts` / `budget-loop.ts` / `parallel.ts`
