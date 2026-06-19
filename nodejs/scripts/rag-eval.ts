@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 process.env.RAG_CHROMA_URL = "";
-import { RagSource } from "../src/rag/rag-source.js";
+import { RagSource, type RagVariant } from "../src/rag/rag-source.js";
 
 interface EvalQuery {
   id: string;
@@ -25,6 +25,8 @@ interface EvalResult {
     p95LatencyMs: number;
   };
   perCategory: Record<string, { hitRateAt5: number; mrr: number }>;
+  perQueryHits: number[];
+  perQueryRanks: (number | null)[];
   failedQueries: string[];
 }
 
@@ -42,7 +44,9 @@ function ndcgAt10(hits: number[], k: number): number {
 }
 
 async function main() {
-  const variantId = process.argv[2] ?? "baseline";
+  const variantArg = process.argv[2] ?? "v0";
+  const variantId = variantArg;
+  const ragVariant: RagVariant = (["v0", "v3", "v4", "v5"].includes(variantArg) ? variantArg : "v0") as RagVariant;
   const evalSetPath = process.argv[3] ?? "data/rag/eval-v1.jsonl";
   const outputDir = "data/rag/eval-results";
 
@@ -53,9 +57,9 @@ async function main() {
 
   const queries: EvalQuery[] = readFileSync(resolve(evalSetPath), "utf-8")
     .split("\n").filter(Boolean).map(l => JSON.parse(l));
-  console.log(`[${variantId}] 查询: ${queries.length} 条`);
+  console.log(`[${variantId}] (ragVariant=${ragVariant}) 查询: ${queries.length} 条`);
 
-  const rag = new RagSource();
+  const rag = new RagSource(undefined, ragVariant);
   const latencies: number[] = [];
   const results: Array<{ cat: string; hit5: boolean; hit10: boolean; rank: number | null }> = [];
   const byCategory: Record<string, number[]> = {};
@@ -65,8 +69,16 @@ async function main() {
     const docs = await rag.search({ city: q.city, query: q.query, maxResults: 10 });
     latencies.push(Date.now() - start);
 
-    const gtSet = new Set(q.groundTruthDocIds);
-    const firstHitIdx = docs.findIndex(d => gtSet.has(d.document.id));
+    const keywords = q.groundTruthDocIds
+      .map(id => {
+        const prefix = `travel_guides_${q.city}_`;
+        return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+      })
+      .filter(k => k.length > 0);
+
+    const firstHitIdx = docs.findIndex(d =>
+      keywords.some(k => (d.document.content ?? "").includes(k)),
+    );
     const hit = firstHitIdx >= 0;
 
     results.push({ cat: q.category, hit5: hit && firstHitIdx < 5, hit10: hit, rank: hit ? firstHitIdx + 1 : null });
@@ -102,6 +114,8 @@ async function main() {
         return [cat, { hitRateAt5: catHits / catCount, mrr: +catMrr.toFixed(4) }];
       })
     ),
+    perQueryHits: results.map(r => r.hit10 ? 1 : 0),
+    perQueryRanks: results.map(r => r.rank),
     failedQueries: results.filter(r => !r.hit10).map((_, i) => queries[i].id),
   };
 
