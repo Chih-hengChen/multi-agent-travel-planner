@@ -2,6 +2,15 @@
 
 ## 已完成
 
+### RAG 第三轮实验:V6 LLM 扩展 × BM25 (2026-06-20)
+完整记录在 `docs/rag-optimization-log.md` §9,核心发现:
+- **实装 V6 variant**(LLM 扩展 × BM25):原 query + 3 个 LLM 扩展的 tokens 并集 → 单次 BM25(共享 IDF)。`RagVariant` 类型扩展为 v0-v6,`rag-eval.ts` 白名单同步加 v6。
+- **第一版 V6 踩坑**:每个 expansion 独立跑 BM25 再 max 合并,导致 IDF 不可比、Hit@5 仅 63%。
+- **修复版 V6**:tokens 并集 + 单次 BM25,Hit@5=66%、MRR=0.577、avg 2420ms,但仍**未超过 V3(67%/0.616/43ms)**。
+- **LLM 扩展路径被证伪**:V5(LLM+向量)和 V6(LLM+BM25)都只到 66%,均不超过 V3。LLM 扩展的 IDF 稀释 + 向量增益丢失抵消了关键词覆盖增益。
+- **关键学习**:BM25 分数跨 query 不可比 — 多变体合并必须共享 IDF(对后续 RRF 实验有参考价值)。
+- **当前最优保持 V3**(BM25 hybrid + 向量 fallback),下一步候选:扩原始语料 / 提阈值 / RRF / 换 embedding / cross-encoder reranker。
+
 ### RAG 第二轮实验:LLM 扩展 + Embedding 修复 (2026-06-19)
 全天完整实验记录在 `docs/rag-optimization-log.md` §8,核心发现:
 - **Embedding 一直没工作**:embedder 静默返回空向量,此前全部结果(67% Hit)是纯 BM25 关键词匹配跑出来的。根因是 RAG_EMBEDDING_* 未配置,fallback 到不支持的 Anthropic 端点。

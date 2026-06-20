@@ -51,7 +51,7 @@ function perQueryNdcg(docs: RagSearchResult[], keywords: string[], k: number): n
 async function main() {
   const variantArg = process.argv[2] ?? "v0";
   const variantId = variantArg;
-  const validVariants = ["v0", "v1", "v2", "v3", "v4", "v5"];
+  const validVariants = ["v0", "v1", "v2", "v3", "v4", "v5", "v6"];
   const ragVariant: RagVariant = (validVariants.includes(variantArg) ? variantArg : "v0") as RagVariant;
   const evalSetPath = process.argv[3] ?? "data/rag/eval-v1.jsonl";
   const outputDir = "data/rag/eval-results";

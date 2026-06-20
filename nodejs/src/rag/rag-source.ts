@@ -9,7 +9,7 @@ import type { Logger } from "pino";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
-export type RagVariant = "v0" | "v1" | "v2" | "v3" | "v4" | "v5";
+export type RagVariant = "v0" | "v1" | "v2" | "v3" | "v4" | "v5" | "v6";
 
 const expansionCache = new Map<string, string[]>();
 
@@ -149,37 +149,12 @@ export class RagSource {
       });
     }
 
-    const keywordFallback = (): RagSearchResult[] => {
-      const store = this.store as any;
-      const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries;
-      if (!entries?.length) return [];
-      const city = params.city;
-      const category = params.category && params.category !== "all" ? params.category : undefined;
-      const filtered = entries.filter((e) => {
-        if (city && e.doc.metadata.city !== city) return false;
-        if (category && e.doc.metadata.category !== category) return false;
-        return true;
-      });
-      if (filtered.length === 0) return [];
-
-      const totalDocs = filtered.length;
-      const avgDocLen = filtered.reduce((s, e) => s + e.doc.content.length, 0) / totalDocs;
-      const queryTokens = tokenizeZh(params.query);
-      const df = new Map<string, number>();
-      for (const t of queryTokens) {
-        let n = 0;
-        for (const e of filtered) if (e.doc.content.toLowerCase().includes(t)) n++;
-        df.set(t, n);
-      }
-      return filtered
-        .map((e) => ({
-          document: e.doc,
-          score: bm25Score(queryTokens, e.doc.content, e.doc.content.length, avgDocLen, df, totalDocs),
-        }))
-        .filter((r) => r.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, params.maxResults ?? 5);
-    };
+    const keywordFallback = (): RagSearchResult[] => this.bm25Search(
+      params.query,
+      params.city,
+      params.category && params.category !== "all" ? params.category : undefined,
+      params.maxResults ?? 5,
+    );
 
     const filtered = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
 
@@ -209,6 +184,17 @@ export class RagSource {
         .sort((a, b) => b.score - a.score);
       if (merged.length === 0) return keywordFallback();
       return merged.slice(0, params.maxResults ?? 5);
+    }
+
+    if (this.variant === "v6") {
+      const expansions = await expandQuery(params.query);
+      const maxResults = params.maxResults ?? 5;
+      const city = params.city;
+      const category = params.category && params.category !== "all" ? params.category : undefined;
+      const tokenSet = new Set<string>();
+      for (const q of expansions) for (const t of tokenizeZh(q)) tokenSet.add(t);
+      const mergedTokens = [...tokenSet];
+      return this.bm25SearchWithTokens(mergedTokens, city, category, maxResults);
     }
 
     if (this.variant === "v3") {
@@ -318,5 +304,48 @@ export class RagSource {
   async getStats(): Promise<RagSourceStats> {
     const totalDocs = await this.store.count();
     return { totalDocs, byCity: {}, byCategory: {}, bySource: {} };
+  }
+
+  private bm25Search(
+    query: string,
+    city: string | undefined,
+    category: string | undefined,
+    maxResults: number,
+  ): RagSearchResult[] {
+    return this.bm25SearchWithTokens(tokenizeZh(query), city, category, maxResults);
+  }
+
+  private bm25SearchWithTokens(
+    queryTokens: string[],
+    city: string | undefined,
+    category: string | undefined,
+    maxResults: number,
+  ): RagSearchResult[] {
+    const store = this.store as any;
+    const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries;
+    if (!entries?.length) return [];
+    const filtered = entries.filter((e) => {
+      if (city && e.doc.metadata.city !== city) return false;
+      if (category && e.doc.metadata.category !== category) return false;
+      return true;
+    });
+    if (filtered.length === 0) return [];
+
+    const totalDocs = filtered.length;
+    const avgDocLen = filtered.reduce((s, e) => s + e.doc.content.length, 0) / totalDocs;
+    const df = new Map<string, number>();
+    for (const t of queryTokens) {
+      let n = 0;
+      for (const e of filtered) if (e.doc.content.toLowerCase().includes(t)) n++;
+      df.set(t, n);
+    }
+    return filtered
+      .map((e) => ({
+        document: e.doc,
+        score: bm25Score(queryTokens, e.doc.content, e.doc.content.length, avgDocLen, df, totalDocs),
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
   }
 }
