@@ -325,7 +325,10 @@ export class RagSource {
     const entries: Array<{ doc: RagDocument; embedding: number[] }> = store.entries ?? store._entries;
     if (!entries?.length) return [];
     const filtered = entries.filter((e) => {
-      if (city && e.doc.metadata.city !== city) return false;
+      if (city) {
+        const dc = e.doc.metadata.city;
+        if (dc !== city && !(dc && dc.startsWith(city))) return false;
+      }
       if (category && e.doc.metadata.category !== category) return false;
       return true;
     });

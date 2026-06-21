@@ -2,6 +2,18 @@
 
 ## 已完成
 
+### RAG 第四轮实验:数据 bug 揭露 + 全量重测 (2026-06-21)
+完整记录在 `docs/rag-optimization-log.md` §10(追加章节,不改 §1-§9)。起因:用户质疑"成都攻略有数据却搜不出来",实地调查 store 后揭露 3 个被前三轮忽略的 bug:
+- **Bug A (阻断性)**:eval city="成都" vs store city="成都攻略",严格 `!==` 过滤 → 成都 20 条 query 全 0 命中。store 124 个 city 中 30+ 个带后缀("浙江攻略"/"香格里拉9日"...)。
+- **Bug B (掩盖性)**:`rag-eval.ts:130` `failedQueries` 用过滤后数组索引取原数组,失败 ID 永远只落在 queries[0..35],成都/西安/广州失败不出现 → 失败分布报告长期失真。
+- **Bug C (质量损耗)**:PDF 噪声——`-- N of M --` 分页符、`[city][cat] title - ` 重复前缀、表格残留。
+- **修复**:(1) `failedQueries` 改 flatMap;(2) `vector-store.ts` + `rag-source.ts` city filter 改 `=== || startsWith`;(3) 新建 `scripts/rag-clean-store.ts` 一次性清洗 store(9432 → 7312,丢 2120 条纯噪声),原始备份到 `travel_guides.raw.json`。
+- **重测**:V0 baseline 61% → **86%(+25pp)**,V3 67% → **86%(+19pp)**。**契约目标 Hit@5 ≥ 85% 达成**。
+- **关键发现**:前三轮"瓶颈在 embedding 召回"归因部分错误 — 真实瓶颈是数据 bug。修了 city filter 后 V0 向量+BM25 fallback 直接到 86%,embedding 本身工作正常。
+- **V3 vs V0**:Hit@5 持平 86%,但 V3 的 MRR +1.8pp / NDCG +3.8pp(p<0.0001)显著更优。**默认 variant 改为 v3**。
+- **V5/V6(LLM 扩展路径)正式废弃**:修复后显著变差(-2~-3pp p<0.001)+ 延迟 26-32 倍。
+- **下一步候选**:扩主题语料 / 真实 ground truth 标注 / cross-encoder reranker(目标 ≥90%)。
+
 ### RAG 第三轮实验:V6 LLM 扩展 × BM25 (2026-06-20)
 完整记录在 `docs/rag-optimization-log.md` §9,核心发现:
 - **实装 V6 variant**(LLM 扩展 × BM25):原 query + 3 个 LLM 扩展的 tokens 并集 → 单次 BM25(共享 IDF)。`RagVariant` 类型扩展为 v0-v6,`rag-eval.ts` 白名单同步加 v6。

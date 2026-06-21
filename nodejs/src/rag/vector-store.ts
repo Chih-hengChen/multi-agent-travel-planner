@@ -44,7 +44,10 @@ export class MemoryVectorStore implements IVectorStore {
   async search(queryVector: number[], topK: number, filter?: { city?: string; category?: string }): Promise<RagSearchResult[]> {
     const scored = this.entries
       .filter((e) => {
-        if (filter?.city && e.doc.metadata.city !== filter.city) return false;
+        if (filter?.city) {
+          const dc = e.doc.metadata.city;
+          if (dc !== filter.city && !(dc && dc.startsWith(filter.city))) return false;
+        }
         if (filter?.category && e.doc.metadata.category !== filter.category) return false;
         return true;
       })

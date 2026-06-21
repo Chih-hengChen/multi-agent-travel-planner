@@ -127,7 +127,7 @@ async function main() {
     perQueryHits: results.map(r => r.hit10 ? 1 : 0),
     perQueryRanks: results.map(r => r.rank),
     perQueryNdcg: results.map(r => +r.ndcg.toFixed(4)),
-    failedQueries: results.filter(r => !r.hit10).map((_, i) => queries[i].id),
+    failedQueries: results.flatMap((r, i) => r.hit10 ? [] : [queries[i].id]),
   };
 
   if (!existsSync(resolve(outputDir))) mkdirSync(resolve(outputDir), { recursive: true });
