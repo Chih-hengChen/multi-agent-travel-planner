@@ -17,6 +17,7 @@ interface EvalResult {
   perCategory: Record<string, { hitRateAt5: number; mrr: number }>;
   perQueryHits?: number[];
   perQueryNdcg?: number[];
+  invariantViolations?: string[];
 }
 
 function bootstrapCI(a: number[], b: number[], iterations: number): { delta: number; pValue: number } {
@@ -46,17 +47,25 @@ function main() {
     process.exit(1);
   }
 
-  const results: EvalResult[] = files.map((f: string) => JSON.parse(readFileSync(resolve(resultsDir, f), "utf-8")));
+  const allResults: EvalResult[] = files.map((f: string) => JSON.parse(readFileSync(resolve(resultsDir, f), "utf-8")));
+  const latestByVariant = new Map<string, EvalResult>();
+  for (const r of allResults) {
+    const prev = latestByVariant.get(r.variantId);
+    if (!prev || r.timestamp > prev.timestamp) latestByVariant.set(r.variantId, r);
+  }
+  const results = [...latestByVariant.values()];
+
   const baselineId = process.argv[3] ?? "baseline";
   const baseline = results.find(r => r.variantId === baselineId);
   const variants = results.filter(r => r.variantId !== baselineId);
   if (!baseline) { console.error(`基线 ${baselineId} 未找到`); process.exit(1); }
 
   const keys: (keyof EvalMetrics)[] = ["hitRateAt5", "mrr", "ndcgAt10", "avgLatencyMs"];
-  const lines: string[] = ["# RAG 对比报告", `基线: ${baselineId}`, `对比: ${variants.map(v => v.variantId).join(", ")}`, ""];
+  const lines: string[] = ["# RAG 对比报告", `基线: ${baselineId}(latest)`, `对比: ${variants.map(v => v.variantId).join(", ")}`, ""];
   lines.push("| 指标 | 基线 | " + variants.map(v => v.variantId).join(" | ") + " | Δ | p | 显著? |");
   lines.push("|---|---" + variants.map(() => "---").join("|") + "|---|---|---|");
 
+  const allDeltasZero: Record<string, boolean> = { hitRateAt5: true, mrr: true, ndcgAt10: true };
   for (const key of keys) {
     const b = baseline.metrics[key];
     for (const v of variants) {
@@ -75,8 +84,40 @@ function main() {
       const ci = bootstrapCI(aArr, bArr, 1000);
       const delta = val - b;
       const sig = key === "avgLatencyMs" ? delta < -5 : Math.abs(delta) >= 0.03 && ci.pValue < 0.05;
+      if (key in allDeltasZero && delta !== 0) allDeltasZero[key] = false;
       lines.push(`| ${key} | ${isPct ? (b * 100).toFixed(1) + "%" : b.toFixed(0) + "ms"} | ${isPct ? (val * 100).toFixed(1) + "%" : val.toFixed(0) + "ms"} | ${isPct ? (delta * 100).toFixed(1) + "%" : delta.toFixed(0) + "ms"} | ${ci.pValue.toFixed(4)} | ${sig ? "✅" : "❌"} |`);
     }
+  }
+
+  lines.push("", "## Layer 4: Measurement System Sanity Check", "");
+  const suspectKeys = Object.entries(allDeltasZero).filter(([, v]) => v).map(([k]) => k);
+  if (suspectKeys.length > 0) {
+    lines.push(
+      `⚠️ **SUSPECT MEASUREMENT SYSTEM**: 以下指标在所有 variant 中 delta=0: ${suspectKeys.join(", ")}`,
+      "",
+      "不同算法不可能在所有指标上完全一致。可能原因:",
+      "1. city filter 短路(本 variant 测试 0 条结果)",
+      "2. fallback 路径绕过 variant 分支",
+      "3. eval 指标实现 bug(NDCG = 1.0 异常等)",
+      "4. store 数据问题导致所有 query 走相同路径",
+      "",
+      "**下一步**: 先调 \`scripts/verify-store.ts\`,再逐 variant 加日志确认分支真的被执行。",
+      "",
+    );
+  } else {
+    lines.push("✅ 所有 variant 之间至少有一项指标 delta≠0,测量系统信号正常。", "");
+  }
+
+  const invariantAgg: string[] = [];
+  for (const r of results) {
+    for (const v of r.invariantViolations ?? []) {
+      invariantAgg.push(`[${r.variantId}] ${v}`);
+    }
+  }
+  if (invariantAgg.length > 0) {
+    lines.push("## Layer 4: Invariant Violations 汇总", "");
+    for (const v of invariantAgg) lines.push(`- ${v}`);
+    lines.push("");
   }
 
   const outPath = resolve(resultsDir, `comparison-${new Date().toISOString().slice(0, 10)}.md`);

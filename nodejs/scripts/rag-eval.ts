@@ -26,10 +26,12 @@ interface EvalResult {
     p95LatencyMs: number;
   };
   perCategory: Record<string, { hitRateAt5: number; mrr: number }>;
+  byCity: Record<string, { total: number; hit5: number; hit10: number; storeEntries: number }>;
   perQueryHits: number[];
   perQueryRanks: (number | null)[];
   perQueryNdcg: number[];
   failedQueries: string[];
+  invariantViolations: string[];
 }
 
 function p(arr: number[], percentile: number): number {
@@ -69,9 +71,19 @@ async function main() {
     .split("\n").filter(Boolean).map(l => JSON.parse(l));
   console.log(`[${variantId}] (ragVariant=${ragVariant}, corpus=${corpusDir ?? "default"}) 查询: ${queries.length} 条`);
 
+  const storeEntriesByCity: Record<string, number> = {};
+  const storePath = resolve("data/vectors/travel_guides.json");
+  if (existsSync(storePath)) {
+    const store: Array<{ doc: { metadata: { city: string } } }> = JSON.parse(readFileSync(storePath, "utf-8"));
+    for (const e of store) {
+      const c = e.doc.metadata.city ?? "<empty>";
+      storeEntriesByCity[c] = (storeEntriesByCity[c] ?? 0) + 1;
+    }
+  }
+
   const rag = new RagSource(undefined, ragVariant, corpusDir);
   const latencies: number[] = [];
-  const results: Array<{ cat: string; hit5: boolean; hit10: boolean; rank: number | null; ndcg: number }> = [];
+  const results: Array<{ cat: string; city: string; hit5: boolean; hit10: boolean; rank: number | null; ndcg: number }> = [];
   const byCategory: Record<string, number[]> = {};
 
   for (const q of queries) {
@@ -92,7 +104,7 @@ async function main() {
     const hit = firstHitIdx >= 0;
     const ndcg = perQueryNdcg(docs, keywords, 10);
 
-    results.push({ cat: q.category, hit5: hit && firstHitIdx < 5, hit10: hit, rank: hit ? firstHitIdx + 1 : null, ndcg });
+    results.push({ cat: q.category, city: q.city, hit5: hit && firstHitIdx < 5, hit10: hit, rank: hit ? firstHitIdx + 1 : null, ndcg });
     if (!byCategory[q.category]) byCategory[q.category] = [];
     if (hit) byCategory[q.category].push(firstHitIdx + 1);
   }
@@ -103,6 +115,30 @@ async function main() {
   const recallAt5 = results.filter(r => r.hit5).length / queries.length;
   const meanNdcg = results.reduce((s, r) => s + r.ndcg, 0) / queries.length;
   const avgLat = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+
+  const byCity: Record<string, { total: number; hit5: number; hit10: number; storeEntries: number }> = {};
+  for (const r of results) {
+    if (!byCity[r.city]) byCity[r.city] = { total: 0, hit5: 0, hit10: 0, storeEntries: 0 };
+    byCity[r.city].total++;
+    if (r.hit5) byCity[r.city].hit5++;
+    if (r.hit10) byCity[r.city].hit10++;
+  }
+  for (const c of Object.keys(byCity)) {
+    byCity[c].storeEntries = storeEntriesByCity[c] ?? 0;
+  }
+
+  const invariantViolations: string[] = [];
+  if (meanNdcg > hitAt10 + 0.01) {
+    invariantViolations.push(`METRIC BUG: NDCG@10(${meanNdcg.toFixed(4)}) > Hit@10(${hitAt10.toFixed(4)}) — 违反基础不等式,检查 NDCG 实现`);
+  }
+  const cityHitRates = Object.values(byCity).map(s => s.hit5 / s.total);
+  if (cityHitRates.length > 1 && cityHitRates.every(r => r === cityHitRates[0])) {
+    invariantViolations.push(`SUSPECT: 所有城市 Hit@5 完全相同 (${(cityHitRates[0] * 100).toFixed(1)}%) — 可能是 city filter 短路或测量系统问题`);
+  }
+  const catHitRates = Object.values(byCategory).map(ranks => {
+    const cnt = results.filter(r => r.cat === ranks[0] ?? "").length;
+    return ranks.length / Math.max(1, cnt);
+  });
 
   const result: EvalResult = {
     variantId,
@@ -124,10 +160,12 @@ async function main() {
         return [cat, { hitRateAt5: catHits / catCount, mrr: +catMrr.toFixed(4) }];
       })
     ),
+    byCity,
     perQueryHits: results.map(r => r.hit10 ? 1 : 0),
     perQueryRanks: results.map(r => r.rank),
     perQueryNdcg: results.map(r => +r.ndcg.toFixed(4)),
     failedQueries: results.flatMap((r, i) => r.hit10 ? [] : [queries[i].id]),
+    invariantViolations,
   };
 
   if (!existsSync(resolve(outputDir))) mkdirSync(resolve(outputDir), { recursive: true });
@@ -140,6 +178,22 @@ async function main() {
   console.log(`  NDCG@10:     ${meanNdcg.toFixed(4)}  (per-query mean)`);
   console.log(`  avg latency: ${avgLat.toFixed(0)}ms`);
   console.log(`  失败 queries: ${result.failedQueries.length}/${queries.length}`);
+
+  console.log(`\n[Layer 2] 按城市分层(city / Hit@5 / 失败 / store entries):`);
+  console.log("  city            | Hit@5     | 失败    | store entries");
+  console.log("  ----------------|-----------|---------|--------------");
+  for (const [city, s] of Object.entries(byCity).sort((a, b) => b[1].hit5 / b[1].total - a[1].hit5 / a[1].total)) {
+    const pct = (s.hit5 / s.total * 100).toFixed(0).padStart(3);
+    const fail = (s.total - s.hit10).toString().padStart(3);
+    console.log(`  ${city.padEnd(15)} | ${pct}% (${s.hit5}/${s.total})  | ${fail}/${s.total}  | ${s.storeEntries}`);
+  }
+
+  if (invariantViolations.length > 0) {
+    console.log(`\n[Layer 4] ⚠️  ${invariantViolations.length} 项 invariant violation:`);
+    for (const v of invariantViolations) console.log(`  - ${v}`);
+  } else {
+    console.log(`\n[Layer 4] ✅ Invariant check 通过(NDCG ≤ Hit@10,城市间命中率有方差)`);
+  }
 }
 
 main().catch(console.error);
