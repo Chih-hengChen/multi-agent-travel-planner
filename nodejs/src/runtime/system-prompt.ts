@@ -39,8 +39,10 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 下一阶段:候选齐全 → selecting。`,
 
   selecting:  `【当前阶段:selecting(用户选择)】
-任务:推送交通候选(去程+返程)和酒店候选,等待用户用 select_transport / select_hotel 工具确认。
-下一阶段:三个 selected 字段齐全 → planning。`,
+任务:将候选交通(去程+返程)和候选酒店以清晰列表形式呈现给用户,然后结束本轮回复。
+约束:你没有 select_transport / select_hotel 工具,不能替用户选择。只展示候选,等待用户通过前端按钮确认。
+格式:先列出"去程交通候选"、再"返程交通候选"、再"酒店候选",简洁清晰即可。
+下一阶段:用户选择后系统会自动推进到 planning。`,
 
   planning:   `【当前阶段:planning(行程编排)】
 任务:为每一天编排景点 + 衔接交通 + 餐厅。最后调 finalize_plan 输出完整 JSON。

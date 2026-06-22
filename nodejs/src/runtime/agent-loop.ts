@@ -88,6 +88,7 @@ export interface LoopResult {
   iterations: number;
   forceStopped?: boolean;
   reason?: string;
+  pausedForSelection?: boolean;
 }
 
 interface ExecutedTool {
@@ -264,6 +265,9 @@ export async function runAgentLoop(
       consecutiveRejections = 0;
       if (canFinish(state)) {
         return { state, messages, iterations: iter + 1 };
+      }
+      if (state.phase === "selecting") {
+        return { state, messages, iterations: iter + 1, pausedForSelection: true };
       }
       messages.push({ role: "user", content: forceContinuePrompt(state) });
       continue;

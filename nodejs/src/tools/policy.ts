@@ -80,13 +80,13 @@ const TOOL_PHASE_POLICY: Record<ToolName, ToolPhasePolicyEntry> = {
   },
   select_transport: {
     name: "select_transport",
-    description: "用户选择交通",
-    allowedPhases: ["selecting"],
+    description: "用户选择交通(仅限前端 API 调用,LLM 不可用)",
+    allowedPhases: [], // 红线:LLM 不得自主选择交通,仅 /api/chat/:sid/select 可触发
   },
   select_hotel: {
     name: "select_hotel",
-    description: "用户选择酒店",
-    allowedPhases: ["selecting"],
+    description: "用户选择酒店(仅限前端 API 调用,LLM 不可用)",
+    allowedPhases: [], // 红线:LLM 不得自主选择酒店,仅 /api/chat/:sid/select 可触发
   },
   finalize_plan: {
     name: "finalize_plan",

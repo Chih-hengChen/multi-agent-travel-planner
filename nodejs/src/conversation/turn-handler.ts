@@ -24,7 +24,7 @@ import { settings } from "../config/settings.js";
 import type { PlanSummary, Flight, Train, Hotel, ProgressCallback } from "../types/index.js";
 import type { Message } from "../api/llm-client.js";
 import { withSessionId } from "../logging/session-context.js";
-import { createInitialAgentState } from "../runtime/state.js";
+import { createInitialAgentState, applyUserSelection, maybeAdvancePhase } from "../runtime/state.js";
 import { runAgentLoop, type SSEEmitter, type LoopResult, type LLMCaller, type ToolExecutor, type LLMResponse, type LLMCallOptions } from "../runtime/agent-loop.js";
 import { extractText } from "../api/llm-response-parser.js";
 import { createSSEBridge } from "../runtime/sse.js";
@@ -188,6 +188,37 @@ export class TurnHandler {
       if (ctx.state === ConversationState.SELECTING_HOTEL) {
         return this.searchHotels(ctx);
       }
+    }
+
+    // Agent loop 模式:用户选择注入 agentState 后恢复循环
+    if (ctx.agentState) {
+      if (request.type === "transport" && request.outboundId && request.returnId) {
+        ctx.selectedOutboundId = request.outboundId;
+        ctx.selectedReturnId = request.returnId;
+        ctx.agentState = applyUserSelection(ctx.agentState, {
+          outboundId: request.outboundId,
+          returnId: request.returnId,
+          hotelId: (ctx.selectedHotel as { name?: string })?.name ?? request.hotelId ?? "",
+        });
+      }
+      if (request.type === "hotel" && request.hotelId) {
+        ctx.selectedHotel = ctx.hotelOptions?.find(h => h.name === request.hotelId);
+        ctx.agentState = applyUserSelection(ctx.agentState, {
+          outboundId: ctx.selectedOutboundId ?? request.outboundId ?? "",
+          returnId: ctx.selectedReturnId ?? request.returnId ?? "",
+          hotelId: request.hotelId,
+        });
+      }
+
+      const sel = ctx.agentState;
+      if (sel.selectedOutbound && sel.selectedReturn && sel.selectedHotel) {
+        ctx.agentState = maybeAdvancePhase(sel);
+        return this.handleViaAgentLoop(ctx, "用户已选择交通和酒店,继续规划行程", onProgress);
+      }
+      return {
+        newState: ctx.state,
+        replyText: `已记录${request.type === "transport" ? "交通" : "酒店"}选择，请继续选择。`,
+      };
     }
 
     if (
@@ -476,6 +507,33 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
       if (result.forceStopped) {
         const reason = result.reason ?? "Agent Loop 未在期限内完成";
         return { newState: ConversationState.ERROR_RECOVERABLE, replyText: `行程规划中断:${reason}`, error: reason };
+      }
+
+      if (result.pausedForSelection) {
+        const transportResult = result.state.candidateTransports?.length
+          ? { outbound: result.state.candidateTransports.filter((t: TransportOption) =>
+              (t as { departStation?: string }).departStation === ctx.departureCity ||
+              t.mode === "flight" || t.mode === "train"
+            ).slice(0, 4), return: result.state.candidateTransports.filter((t: TransportOption) =>
+              (t as { arriveStation?: string }).arriveStation === ctx.departureCity ||
+              t.mode === "flight" || t.mode === "train"
+            ).slice(0, 4) }
+          : undefined;
+        const hotelOptions = result.state.candidateHotels?.slice(0, 5);
+
+        const lastMsg = result.messages[result.messages.length - 1];
+        const replyText = lastMsg && typeof lastMsg.content === "string"
+          ? lastMsg.content
+          : (Array.isArray(lastMsg?.content)
+            ? (lastMsg.content as Array<{ type: string; text?: string }>).find(c => c.type === "text")?.text ?? "请选择交通和酒店："
+            : "请选择交通和酒店：");
+
+        return {
+          newState: ConversationState.SELECTING_TRANSPORT,
+          replyText,
+          transportOptions: transportResult as TransportSearchResult | undefined,
+          hotelOptions,
+        };
       }
 
       const lastMsg = result.messages[result.messages.length - 1];

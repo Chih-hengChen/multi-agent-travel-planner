@@ -142,6 +142,30 @@ export function isPreferencesComplete(prefs: UserPreferences | undefined): boole
   );
 }
 
+export interface UserSelection {
+  outboundId: string;
+  returnId: string;
+  hotelId: string;
+}
+
+export function applyUserSelection(state: AgentState, sel: UserSelection): AgentState {
+  const outbound = (state.candidateTransports ?? []).find(
+    t => (t as { id?: string }).id === sel.outboundId || (t as { flightNo?: string }).flightNo === sel.outboundId,
+  );
+  const returnOpt = (state.candidateTransports ?? []).find(
+    t => (t as { id?: string }).id === sel.returnId || (t as { flightNo?: string }).flightNo === sel.returnId,
+  );
+  const hotel = (state.candidateHotels ?? []).find(
+    h => h.name === sel.hotelId || (h as { id?: string }).id === sel.hotelId,
+  );
+  return {
+    ...state,
+    selectedOutbound: outbound,
+    selectedReturn: returnOpt,
+    selectedHotel: hotel,
+  };
+}
+
 export function maybeAdvancePhase(state: AgentState): AgentState {
   switch (state.phase) {
     case "gathering":
