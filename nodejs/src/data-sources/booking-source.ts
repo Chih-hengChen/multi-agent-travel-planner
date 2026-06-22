@@ -1,6 +1,7 @@
 import { settings } from "../config/settings.js";
 import type { Hotel } from "../types/index.js";
 import type { FlightSearchParams, HotelSearchParams, AttractionSearchParams, TrainSearchParams, RestaurantSearchParams, TravelDataSource } from "./types.js";
+import { loadCachedHotels, saveCachedHotels } from "./hotel-cache.js";
 
 const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
   "北京": { lat: 39.9042, lon: 116.4074 },
@@ -33,86 +34,6 @@ function getCoords(city: string): { lat: number; lon: number } | null {
   return CITY_COORDS[city] ?? null;
 }
 
-interface ApiHotel {
-  hotel_name: string;
-  class?: number;
-  review_score?: number;
-  min_total_price?: number;
-  currencycode?: string;
-  composite_price_breakdown?: {
-    gross_amount_per_night?: { value?: number };
-  };
-  longitude?: number;
-  latitude?: number;
-}
-
-async function enrichChineseNames(hotels: Hotel[], city: string): Promise<void> {
-  if (!settings.AMAP_API_KEY || hotels.length === 0) return;
-  const BRAND_MAP: Record<string, string> = {
-    "howard johnson": "豪生",
-    "holiday inn": "假日",
-    "crowne plaza": "皇冠假日",
-    "holiday inn express": "智选假日",
-    "courtyard": "万怡",
-    "marriott": "万豪",
-    "sheraton": "喜来登",
-    "westin": "威斯汀",
-    "hilton": "希尔顿",
-    "hyatt": "凯悦",
-    "grand hyatt": "君悦",
-    "park hyatt": "柏悦",
-    "shangri": "香格里拉",
-    "kempinski": "凯宾斯基",
-    "intercontinental": "洲际",
-    "novotel": "诺富特",
-    "ibis": "宜必思",
-    "ramada": "华美达",
-    "days inn": "戴斯",
-    "super 8": "速8",
-    "jinjiang": "锦江",
-    "home inn": "如家",
-    "hanting": "汉庭",
-    "all seasons": "全季",
-  };
-
-  for (const hotel of hotels) {
-    try {
-      const enLower = hotel.name.toLowerCase();
-      let keyword = "";
-      for (const [brand, cn] of Object.entries(BRAND_MAP)) {
-        if (enLower.includes(brand)) {
-          keyword = cn;
-          break;
-        }
-      }
-      if (!keyword) {
-        const firstTwo = hotel.name.split(" ").slice(0, 2).join(" ");
-        keyword = firstTwo;
-      }
-
-      const qs = new URLSearchParams({
-        key: settings.AMAP_API_KEY,
-        keywords: keyword + "酒店",
-        types: "100000",
-        city,
-        citylimit: "true",
-        offset: "5",
-        page: "1",
-        extensions: "base",
-      });
-      const resp = await fetch(`https://restapi.amap.com/v3/place/text?${qs}`, {
-        signal: AbortSignal.timeout(8_000),
-      });
-      if (!resp.ok) continue;
-      const data = await resp.json() as { status: string; pois?: { name: string; location?: string }[] };
-      if (data.status !== "1" || !data.pois?.length) continue;
-      hotel.name = data.pois[0].name;
-    } catch {
-      // keep original name
-    }
-  }
-}
-
 export class BookingSource implements TravelDataSource {
   async searchFlights(_params: FlightSearchParams): Promise<never[]> {
     return [];
@@ -125,6 +46,10 @@ export class BookingSource implements TravelDataSource {
       const coords = getCoords(params.city);
       if (!coords) return [];
 
+      const adults = params.adults ?? 2;
+      const cached = loadCachedHotels(params.city, params.checkIn, params.checkOut, adults, params.maxPricePerNight);
+      if (cached) return cached;
+
       const nights = Math.max(
         1,
         Math.round(
@@ -133,26 +58,29 @@ export class BookingSource implements TravelDataSource {
       );
 
       const qs = new URLSearchParams({
+        locale: "zh-cn",
         latitude: String(coords.lat),
         longitude: String(coords.lon),
-        arrival_date: params.checkIn,
-        departure_date: params.checkOut,
-        adults: String(params.adults),
-        room_qty: "1",
+        checkin_date: params.checkIn,
+        checkout_date: params.checkOut,
+        room_number: "1",
+        adults_number: String(adults),
+        filter_by_currency: "CNY",
+        order_by: "popularity",
         units: "metric",
-        currency_code: "CNY",
-        languagecode: "zh-cn",
-        page_number: "1",
-        radius: "15",
+        page_number: "0",
       });
-      if (params.maxPricePerNight) qs.set("price_max", String(Math.round(params.maxPricePerNight * nights)));
+      if (params.maxPricePerNight) {
+        qs.set("categories_filter_ids", `price::CNY-1-${Math.round(params.maxPricePerNight * nights)}`);
+      }
 
       const resp = await fetch(
-        `https://${settings.RAPIDAPI_HOST}/api/v1/hotels/searchHotelsByCoordinates?${qs}`,
+        `https://${settings.RAPIDAPI_HOST}/v1/hotels/search-by-coordinates?${qs}`,
         {
           headers: {
             "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
             "X-RapidAPI-Host": settings.RAPIDAPI_HOST,
+            "Content-Type": "application/json",
           },
           signal: AbortSignal.timeout(30_000),
         },
@@ -163,18 +91,36 @@ export class BookingSource implements TravelDataSource {
       }
 
       const body = await resp.json() as {
-        status?: boolean;
-        data?: { result?: ApiHotel[] };
+        result?: Array<{
+          hotel_id: number;
+          hotel_name: string;
+          hotel_name_trans?: string;
+          class?: number;
+          review_score?: number;
+          review_score_word?: string;
+          min_total_price?: number;
+          currency_code?: string;
+          composite_price_breakdown?: {
+            gross_amount_per_night?: { value?: number };
+            gross_amount_hotel_currency?: { value?: number };
+          };
+          latitude?: number;
+          longitude?: number;
+          address?: string;
+          address_trans?: string;
+          distance_to_cc?: string;
+          ribbon_text?: string;
+          hotel_facilities?: string;
+        }>;
       };
 
-      const rawHotels = body.data?.result ?? [];
-
+      const rawHotels = body.result ?? [];
       const hotels: Hotel[] = rawHotels.map((h) => {
         const perNight = h.composite_price_breakdown?.gross_amount_per_night?.value
           ?? (h.min_total_price ? h.min_total_price / nights : 0);
 
-        let distanceKm = 0;
-        if (h.latitude != null && h.longitude != null && coords) {
+        let distanceKm = h.distance_to_cc ? parseFloat(h.distance_to_cc) : 0;
+        if (!distanceKm && h.latitude != null && h.longitude != null && coords) {
           const R = 6371;
           const dLat = (h.latitude - coords.lat) * Math.PI / 180;
           const dLon = (h.longitude - coords.lon) * Math.PI / 180;
@@ -184,18 +130,16 @@ export class BookingSource implements TravelDataSource {
         }
 
         return {
-          name: h.hotel_name ?? "",
+          name: h.hotel_name_trans || h.hotel_name,
           city: params.city,
-          address: "",
+          address: h.address_trans || h.address || "",
           starRating: h.class ?? 3,
-          userRating: (h.review_score ?? 0) / 2,
+          userRating: (h.review_score ?? 6) / 2,
           pricePerNight: Math.round(perNight),
           amenities: [],
           distanceToCenterKm: distanceKm,
         } as Hotel;
       });
-
-      await enrichChineseNames(hotels, params.city);
 
       hotels.sort((a, b) => {
         const distDiff = a.distanceToCenterKm - b.distanceToCenterKm;
@@ -203,6 +147,7 @@ export class BookingSource implements TravelDataSource {
         return a.pricePerNight - b.pricePerNight;
       });
 
+      saveCachedHotels(params.city, params.checkIn, params.checkOut, adults, params.maxPricePerNight, hotels);
       return hotels;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
