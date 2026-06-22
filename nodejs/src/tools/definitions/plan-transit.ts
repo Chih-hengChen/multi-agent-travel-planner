@@ -104,15 +104,8 @@ export async function executePlanTransit(
 ): Promise<ToolResultLike> {
   const mode = input.mode ?? "transit";
 
-  const startFromState = findCoordsByName(input.from, state);
-  const endFromState = findCoordsByName(input.to, state);
-
-  let start: LatLng | null = startFromState ?? null;
-  let end: LatLng | null = endFromState ?? null;
-
-  const city = state.preferences?.preferredDestination;
-  if (!start) start = await amap.geocode(input.from, city);
-  if (!end) end = await amap.geocode(input.to, city);
+  const start: LatLng | null = findCoordsByName(input.from, state) ?? null;
+  const end: LatLng | null = findCoordsByName(input.to, state) ?? null;
 
   if (!start || !end) {
     const transit = haversineEstimate(input.from, input.to, start, end, mode);
