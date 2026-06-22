@@ -680,6 +680,7 @@ async function postSelect(body, botBubble) {
   let fullText = '';
   let planData = null;
   let rendered = false;
+  let transportCardHtml = '';
 
   try {
     const resp = await fetch(`/api/chat/${sessionId}/select`, {
@@ -721,12 +722,13 @@ async function postSelect(body, botBubble) {
             } else if (currentEvent === 'transport_options') {
               rendered = true;
               botBubble.classList.remove('typing');
-              botBubble.innerHTML = marked.parse(fullText) + renderTransportCard(data);
+              transportCardHtml = renderTransportCard(data);
+              botBubble.innerHTML = marked.parse(fullText) + transportCardHtml;
               scrollBottom();
             } else if (currentEvent === 'hotel_options') {
               rendered = true;
               botBubble.classList.remove('typing');
-              botBubble.innerHTML = marked.parse(fullText) + renderHotelCard(data);
+              botBubble.innerHTML = marked.parse(fullText) + transportCardHtml + renderHotelCard(data);
               scrollBottom();
             } else if (currentEvent === 'tool_result') {
               if (data.tool === 'plan_travel') {
@@ -780,6 +782,7 @@ async function streamConversation(text, botBubble) {
   let fullText = '';
   let planData = null;
   let extraHtml = '';
+  let transportCardHtml = '';
   let progressHtml = '';
 
   const resp = await fetch(`/api/chat/${sessionId}`, {
@@ -827,11 +830,12 @@ async function streamConversation(text, botBubble) {
           } else if (currentEvent === 'question') {
             // question is already shown via text_delta
           } else if (currentEvent === 'transport_options') {
-            extraHtml = renderTransportCard(data);
+            transportCardHtml = renderTransportCard(data);
+            extraHtml = transportCardHtml;
             botBubble.innerHTML = marked.parse(fullText) + extraHtml;
             scrollBottom();
           } else if (currentEvent === 'hotel_options') {
-            extraHtml = renderHotelCard(data);
+            extraHtml = transportCardHtml + renderHotelCard(data);
             botBubble.innerHTML = marked.parse(fullText) + extraHtml;
             scrollBottom();
           } else if (currentEvent === 'progress') {

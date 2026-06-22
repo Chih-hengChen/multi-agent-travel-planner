@@ -31,8 +31,13 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 下一阶段:必填字段齐全 → searching(自动)。`,
 
   searching:  `【当前阶段:searching(并行检索)】
-任务:并行调用 search_baike / search_attractions / search_hotels / search_xhs / search_restaurants(scope=city)。
+任务:并行调用所有可用搜索工具,必须覆盖:
+- search_flights(去程): date=startDate, origin=departureCity, destination=destination
+- search_flights(返程): date=endDate, origin=destination, destination=departureCity
+- search_hotels: city=destination
+- search_baike / search_attractions / search_xhs / search_restaurants(scope=city)
 约束:
+- 往返航班必须都要搜,缺一不可(否则 selecting 阶段没有返程数据)
 - 高德 API 全局限流 3 QPS(代码层排队)
 - search_xhs 默认 30 篇,不够再爬 30
 - search_restaurants 用 scope=city(城市热门),不要 scope=attraction
