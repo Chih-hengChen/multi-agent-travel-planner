@@ -40,13 +40,19 @@ function createAmapClient(): AmapClient {
     async geocode(name: string): Promise<LatLng | null> {
       if (!key) return null;
       try {
-        const qs = new URLSearchParams({ key, address: name });
-        const resp = await fetch(`https://restapi.amap.com/v3/geocode/geo?${qs}`, {
+        const qs = new URLSearchParams({
+          key,
+          keywords: name,
+          city: "北京",
+          types: "风景名胜|公园广场|博物馆|主题乐园|寺庙道观|购物中心|商业街",
+          offset: "1",
+        });
+        const resp = await fetch(`https://restapi.amap.com/v5/place/text?${qs}`, {
           signal: AbortSignal.timeout(10_000),
         });
-        const data = await resp.json() as { status: string; geocodes?: Array<{ location: string }> };
-        if (data.status !== "1" || !data.geocodes?.length) return null;
-        const [lng, lat] = data.geocodes[0].location.split(",").map(Number);
+        const data = await resp.json() as { status: string; pois?: Array<{ location: string; cityname: string }> };
+        if (data.status !== "1" || !data.pois?.length) return null;
+        const [lng, lat] = data.pois[0].location.split(",").map(Number);
         return { lat, lng };
       } catch {
         return null;
@@ -60,19 +66,21 @@ function createAmapClient(): AmapClient {
           key,
           origin: `${start.lng},${start.lat}`,
           destination: `${end.lng},${end.lat}`,
+          city1: "010",
+          city2: "010",
           strategy: "2",
         });
         const resp = await fetch(`https://restapi.amap.com/v5/direction/transit/integrated?${qs}`, {
           signal: AbortSignal.timeout(15_000),
         });
-        const data = await resp.json() as { status: string; transits?: Array<{ cost?: { duration?: string; transit_fee?: string }; distance?: string; steps?: Array<{ instruction: string }> }> };
-        if (data.status !== "1" || !data.transits?.length) return null;
-        const plan = data.transits[0];
+        const data = await resp.json() as { status: string; route?: { transits?: Array<{ cost?: { duration?: string }; distance?: string; walking_distance?: string; steps?: Array<{ instruction: string }> }> } };
+        if (data.status !== "1" || !data.route?.transits?.length) return null;
+        const plan = data.route.transits[0];
         return {
           durationSec: Math.round(parseInt(plan.cost?.duration ?? "0") / 60) * 60 || 1800,
           distanceMeters: parseInt(plan.distance ?? "0") || 5000,
-          cost: plan.cost?.transit_fee ?? null,
-          steps: (plan.steps ?? []).map((s: { instruction: string }) => s.instruction),
+          cost: null,
+          steps: plan.steps?.map((s: { instruction: string }) => s.instruction) ?? [],
         };
       } catch {
         return null;
