@@ -127,7 +127,7 @@ export function computeTravelDays(prefs: UserPreferences): number {
   const start = new Date(prefs.startDate).getTime();
   const end = new Date(prefs.endDate).getTime();
   if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 1;
-  return Math.max(1, Math.floor((end - start) / 86_400_000));
+  return Math.max(1, Math.floor((end - start) / 86_400_000) + 1);
 }
 
 export function isPreferencesComplete(prefs: UserPreferences | undefined): boolean {

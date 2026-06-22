@@ -338,7 +338,7 @@ export async function runAgentLoop(
           gathering: "偏好未收集完整,工具返回空",
           searching: "检索工具均返回空数据,candidateTransports/candidateHotels 为空",
           selecting: "选择工具未设置 selectedOutbound/selectedHotel",
-          planning: "行程编排未产出 dayPlans",
+          planning: "行程编排未完成(dayPlans 与旅行天数不匹配或未通过质量检查)",
           completed: "已完成",
         };
         const reason = phaseDescs[state.phase] ?? `卡在 ${state.phase} 阶段 ${staleCount} 轮无推进`;
