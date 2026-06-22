@@ -1,0 +1,37 @@
+{"ts":"2026-06-22T10:00:00.000Z","sid":"happy-path","iter":0,"type":"llm_request","phase":"gathering","model":"glm-4.7","tools":["collect_preferences"]}
+{"ts":"2026-06-22T10:00:01.200Z","sid":"happy-path","iter":0,"type":"llm_response","stopReason":"tool_use","thought":"用户想规划东京旅行,但还没说日期和预算。先调 collect_preferences 触发偏好采集。","toolCalls":[{"name":"collect_preferences"}]}
+{"ts":"2026-06-22T10:00:02.000Z","sid":"happy-path","iter":0,"type":"tool_exec","tool":"collect_preferences","durationMs":800,"fallbackLevel":0,"resultSummary":{"requiresUserInput":true}}
+{"ts":"2026-06-22T10:00:02.500Z","sid":"happy-path","iter":0,"type":"state_change","op":"set","field":"preferences","valueSummary":{"destination":"东京","budget":15000}}
+{"ts":"2026-06-22T10:00:03.000Z","sid":"happy-path","iter":0,"type":"phase_change","from":"gathering","to":"searching","reason":"basics complete"}
+{"ts":"2026-06-22T10:00:03.500Z","sid":"happy-path","iter":1,"type":"llm_request","phase":"searching","model":"glm-4.7","tools":["search_baike","search_attractions","search_hotels","search_xhs"]}
+{"ts":"2026-06-22T10:00:04.000Z","sid":"happy-path","iter":1,"type":"llm_response","stopReason":"tool_use","thought":"phase=searching, 已有目的地东京+2人+¥15000预算。并行获取百科/景点/酒店/小红书。","toolCalls":[{"name":"search_baike"},{"name":"search_attractions"},{"name":"search_hotels"},{"name":"search_xhs"}]}
+{"ts":"2026-06-22T10:00:04.325Z","sid":"happy-path","iter":1,"type":"tool_exec","tool":"search_baike","durationMs":325,"fallbackLevel":0,"resultSummary":{"city":"东京","len":1850,"source":"web_search_baidu"}}
+{"ts":"2026-06-22T10:00:05.500Z","sid":"happy-path","iter":1,"type":"tool_exec","tool":"search_attractions","durationMs":1200,"fallbackLevel":0,"resultSummary":{"itemCount":12,"top":["浅草寺","明治神宫","晴空塔","银座"]}}
+{"ts":"2026-06-22T10:00:06.200Z","sid":"happy-path","iter":1,"type":"tool_exec","tool":"search_hotels","durationMs":800,"fallbackLevel":0,"resultSummary":{"itemCount":8,"top":["Hotel Mystays 浅草","APA 新宿","Comfort 银座"]}}
+{"ts":"2026-06-22T10:00:09.600Z","sid":"happy-path","iter":1,"type":"tool_exec","tool":"search_xhs","durationMs":3400,"fallbackLevel":0,"resultSummary":{"total":30,"top":["东京小众打卡","浅草寺避坑"]}}
+{"ts":"2026-06-22T10:00:09.800Z","sid":"happy-path","iter":1,"type":"state_change","op":"set","field":"baikeKnowledge","valueSummary":"东京概况:关东平原南部..."}
+{"ts":"2026-06-22T10:00:09.900Z","sid":"happy-path","iter":1,"type":"state_change","op":"append","field":"candidateAttractions","valueSummary":"+ 浅草寺, 明治神宫, 晴空塔, 银座, 涩谷, 秋叶原"}
+{"ts":"2026-06-22T10:00:10.000Z","sid":"happy-path","iter":2,"type":"llm_request","phase":"searching","model":"glm-4.7","tools":["search_flights","search_restaurants"]}
+{"ts":"2026-06-22T10:00:10.500Z","sid":"happy-path","iter":2,"type":"llm_response","stopReason":"tool_use","thought":"已有景点和酒店候选。下一步找航班和城市级餐厅。","toolCalls":[{"name":"search_flights"},{"name":"search_restaurants","input":{"city":"东京","scope":"city"}}]}
+{"ts":"2026-06-22T10:00:12.000Z","sid":"happy-path","iter":2,"type":"tool_exec","tool":"search_flights","durationMs":1500,"fallbackLevel":0,"resultSummary":{"itemCount":6,"top":["CA183 北京-东京","JL020"]}}
+{"ts":"2026-06-22T10:00:13.200Z","sid":"happy-path","iter":2,"type":"tool_exec","tool":"search_restaurants","durationMs":1200,"fallbackLevel":0,"resultSummary":{"scope":"city","itemCount":10,"top":["浅草今半","一兰拉面","叙々苑"]}}
+{"ts":"2026-06-22T10:00:13.500Z","sid":"happy-path","iter":2,"type":"state_change","op":"append","field":"candidateTransports","valueSummary":"+ 6 个航班选项"}
+{"ts":"2026-06-22T10:00:13.600Z","sid":"happy-path","iter":2,"type":"state_change","op":"append","field":"candidateRestaurants","valueSummary":"+ 浅草今半, 一兰拉面, 叙々苑"}
+{"ts":"2026-06-22T10:00:14.000Z","sid":"happy-path","iter":2,"type":"phase_change","from":"searching","to":"selecting","reason":"candidates ready"}
+{"ts":"2026-06-22T10:00:14.500Z","sid":"happy-path","iter":3,"type":"llm_request","phase":"selecting","model":"glm-4.7","tools":["select_transport","select_hotel"]}
+{"ts":"2026-06-22T10:00:15.000Z","sid":"happy-path","iter":3,"type":"llm_response","stopReason":"tool_use","thought":"候选已齐全。推荐 CA183 去程 + Hotel Mystays 浅草。","toolCalls":[{"name":"select_transport","input":{"outboundId":"CA183"}},{"name":"select_hotel","input":{"hotelId":"hotel-mystays"}}]}
+{"ts":"2026-06-22T10:00:15.300Z","sid":"happy-path","iter":3,"type":"tool_exec","tool":"select_transport","durationMs":300,"fallbackLevel":0,"resultSummary":{"outbound":{"flightNo":"CA183","price":2800}}}
+{"ts":"2026-06-22T10:00:15.500Z","sid":"happy-path","iter":3,"type":"tool_exec","tool":"select_hotel","durationMs":200,"fallbackLevel":0,"resultSummary":{"hotel":{"name":"Hotel Mystays 浅草","pricePerNight":900}}}
+{"ts":"2026-06-22T10:00:15.800Z","sid":"happy-path","iter":3,"type":"state_change","op":"set","field":"selectedOutbound","valueSummary":"CA183"}
+{"ts":"2026-06-22T10:00:15.900Z","sid":"happy-path","iter":3,"type":"state_change","op":"set","field":"selectedHotel","valueSummary":"Hotel Mystays 浅草"}
+{"ts":"2026-06-22T10:00:16.000Z","sid":"happy-path","iter":3,"type":"phase_change","from":"selecting","to":"planning","reason":"selection complete"}
+{"ts":"2026-06-22T10:00:16.500Z","sid":"happy-path","iter":4,"type":"llm_request","phase":"planning","model":"MiniMax-M2.7","tools":["plan_transit","search_restaurants","finalize_plan"]}
+{"ts":"2026-06-22T10:00:17.000Z","sid":"happy-path","iter":4,"type":"llm_response","stopReason":"tool_use","thought":"进入 planning,编排 5 天行程。先查浅草寺→晴空塔交通。","toolCalls":[{"name":"plan_transit","input":{"from":"浅草寺","to":"晴空塔","dayIdx":0}}]}
+{"ts":"2026-06-22T10:00:18.200Z","sid":"happy-path","iter":4,"type":"tool_exec","tool":"plan_transit","durationMs":1200,"fallbackLevel":0,"resultSummary":{"from":"浅草寺","to":"晴空塔","mode":"walking","durationMin":15,"distanceKm":1.2}}
+{"ts":"2026-06-22T10:00:18.500Z","sid":"happy-path","iter":4,"type":"state_change","op":"append","field":"dayPlans[0].transits","valueSummary":"浅草寺 → 晴空塔 walking 15min"}
+{"ts":"2026-06-22T10:00:43.000Z","sid":"happy-path","iter":5,"type":"llm_request","phase":"planning","model":"MiniMax-M2.7","tools":["finalize_plan"]}
+{"ts":"2026-06-22T10:00:44.000Z","sid":"happy-path","iter":5,"type":"llm_response","stopReason":"tool_use","thought":"5天行程编排完毕,预算¥14,200在¥15,000内。调用 finalize_plan 交付。","toolCalls":[{"name":"finalize_plan"}]}
+{"ts":"2026-06-22T10:00:45.000Z","sid":"happy-path","iter":5,"type":"tool_exec","tool":"finalize_plan","durationMs":1000,"fallbackLevel":0,"resultSummary":{"plan":"完成 5 天行程","breakdown":{"totalCost":14200,"budgetLimit":15000,"isWithinBudget":true}}}
+{"ts":"2026-06-22T10:00:45.200Z","sid":"happy-path","iter":5,"type":"state_change","op":"set","field":"dayPlans","valueSummary":"5 天行程已编排"}
+{"ts":"2026-06-22T10:00:45.300Z","sid":"happy-path","iter":5,"type":"state_change","op":"set","field":"budgetBreakdown","valueSummary":"¥14,200 / ¥15,000 (节省 ¥800)"}
+{"ts":"2026-06-22T10:00:45.400Z","sid":"happy-path","iter":5,"type":"phase_change","from":"planning","to":"completed","reason":"plan delivered within budget"}

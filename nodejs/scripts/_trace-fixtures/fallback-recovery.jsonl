@@ -1,0 +1,25 @@
+{"ts":"2026-06-22T10:00:00.000Z","sid":"fallback-recovery","iter":0,"type":"llm_request","phase":"gathering","model":"glm-4.7","tools":["collect_preferences"]}
+{"ts":"2026-06-22T10:00:01.000Z","sid":"fallback-recovery","iter":0,"type":"llm_response","stopReason":"tool_use","thought":"收集偏好。","toolCalls":[{"name":"collect_preferences"}]}
+{"ts":"2026-06-22T10:00:02.000Z","sid":"fallback-recovery","iter":0,"type":"tool_exec","tool":"collect_preferences","durationMs":1000,"fallbackLevel":0}
+{"ts":"2026-06-22T10:00:02.500Z","sid":"fallback-recovery","iter":0,"type":"phase_change","from":"gathering","to":"searching","reason":"basics complete"}
+{"ts":"2026-06-22T10:00:03.000Z","sid":"fallback-recovery","iter":1,"type":"llm_request","phase":"searching","model":"glm-4.7","tools":["search_baike","search_xhs","search_restaurants","search_hotels"]}
+{"ts":"2026-06-22T10:00:04.000Z","sid":"fallback-recovery","iter":1,"type":"llm_response","stopReason":"tool_use","thought":"并行搜索。","toolCalls":[{"name":"search_baike"},{"name":"search_xhs"},{"name":"search_restaurants","input":{"city":"东京","scope":"city"}},{"name":"search_hotels"}]}
+{"ts":"2026-06-22T10:00:04.300Z","sid":"fallback-recovery","iter":1,"type":"tool_exec","tool":"search_baike","durationMs":300,"fallbackLevel":0,"resultSummary":{"city":"东京","source":"web_search_baidu"}}
+{"ts":"2026-06-22T10:00:04.500Z","sid":"fallback-recovery","iter":1,"type":"tool_exec","tool":"search_hotels","durationMs":500,"fallbackLevel":0,"resultSummary":{"itemCount":6}}
+{"ts":"2026-06-22T10:00:15.000Z","sid":"fallback-recovery","iter":1,"type":"tool_exec","tool":"search_xhs","durationMs":11000,"fallbackLevel":1,"resultSummary":{"total":0,"source":"web_search_site_filter","error":"xhs-service unreachable"}}
+{"ts":"2026-06-22T10:00:16.500Z","sid":"fallback-recovery","iter":1,"type":"tool_exec","tool":"search_restaurants","durationMs":2000,"fallbackLevel":0,"resultSummary":{"scope":"city","itemCount":8}}
+{"ts":"2026-06-22T10:00:17.000Z","sid":"fallback-recovery","iter":1,"type":"state_change","op":"append","field":"candidateRestaurants","valueSummary":"+ 8 个"}
+{"ts":"2026-06-22T10:00:50.000Z","sid":"fallback-recovery","iter":2,"type":"llm_request","phase":"searching","model":"glm-4.7","tools":["search_restaurants"]}
+{"ts":"2026-06-22T10:00:51.000Z","sid":"fallback-recovery","iter":2,"type":"llm_response","stopReason":"tool_use","thought":"补搜景点周边餐厅。amap 也抖了,用 web_search。","toolCalls":[{"name":"search_restaurants","input":{"city":"东京","scope":"attraction","near":"浅草寺"}}]}
+{"ts":"2026-06-22T10:00:53.000Z","sid":"fallback-recovery","iter":2,"type":"tool_exec","tool":"search_restaurants","durationMs":2000,"fallbackLevel":2,"amapWaitMs":400,"resultSummary":{"scope":"attraction","near":"浅草寺","itemCount":4,"source":"web_search","error":"amap unavailable"}}
+{"ts":"2026-06-22T10:00:53.500Z","sid":"fallback-recovery","iter":2,"type":"state_change","op":"append","field":"planningRestaurants","valueSummary":"浅草寺: +4"}
+{"ts":"2026-06-22T10:01:00.000Z","sid":"fallback-recovery","iter":2,"type":"phase_change","from":"searching","to":"selecting","reason":"candidates acquired"}
+{"ts":"2026-06-22T10:01:01.000Z","sid":"fallback-recovery","iter":3,"type":"llm_request","phase":"selecting","model":"glm-4.7","tools":["select_transport","select_hotel"]}
+{"ts":"2026-06-22T10:01:02.000Z","sid":"fallback-recovery","iter":3,"type":"llm_response","stopReason":"tool_use","thought":"选择。","toolCalls":[{"name":"select_transport"},{"name":"select_hotel"}]}
+{"ts":"2026-06-22T10:01:02.500Z","sid":"fallback-recovery","iter":3,"type":"tool_exec","tool":"select_transport","durationMs":500,"fallbackLevel":0}
+{"ts":"2026-06-22T10:01:02.800Z","sid":"fallback-recovery","iter":3,"type":"tool_exec","tool":"select_hotel","durationMs":300,"fallbackLevel":0}
+{"ts":"2026-06-22T10:01:03.000Z","sid":"fallback-recovery","iter":3,"type":"phase_change","from":"selecting","to":"planning","reason":"done"}
+{"ts":"2026-06-22T10:01:03.500Z","sid":"fallback-recovery","iter":4,"type":"llm_request","phase":"planning","model":"MiniMax-M2.7","tools":["finalize_plan"]}
+{"ts":"2026-06-22T10:01:04.000Z","sid":"fallback-recovery","iter":4,"type":"llm_response","stopReason":"tool_use","thought":"交付行程。虽然 xhs 降级 + amap 二次降级,但数据基本完整。","toolCalls":[{"name":"finalize_plan"}]}
+{"ts":"2026-06-22T10:01:05.000Z","sid":"fallback-recovery","iter":4,"type":"tool_exec","tool":"finalize_plan","durationMs":1000,"fallbackLevel":0,"resultSummary":{"breakdown":{"isWithinBudget":true}}}
+{"ts":"2026-06-22T10:01:05.500Z","sid":"fallback-recovery","iter":4,"type":"phase_change","from":"planning","to":"completed","reason":"delivered"}
