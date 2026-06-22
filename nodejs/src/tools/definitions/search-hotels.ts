@@ -61,18 +61,21 @@ export function createSearchHotelsTool(resolver: SourceResolver, log?: Logger): 
 
         if (p.preferredArea) {
           const area = p.preferredArea;
-          hotels = hotels.filter(h => h.address?.includes(area) || h.name?.includes(area));
+          const areaFiltered = hotels.filter(h => h.address?.includes(area) || h.name?.includes(area));
+          if (areaFiltered.length > 0) hotels = areaFiltered;
         }
 
         if (p.preferredBrands?.length) {
           const brands = p.preferredBrands.map(b => b.toLowerCase());
-          hotels = hotels.filter(h => brands.some(b => h.name.toLowerCase().includes(b)));
+          const brandMatch = hotels.filter(h => brands.some(b => h.name.toLowerCase().includes(b)));
+          if (brandMatch.length > 0) hotels = brandMatch;
         }
 
         if (p.keyAttractions?.length) {
-          hotels = hotels.filter(h =>
+          const attrFiltered = hotels.filter(h =>
             p.keyAttractions!.some(k => h.address?.includes(k) || h.name?.includes(k)),
           );
+          if (attrFiltered.length > 0) hotels = attrFiltered;
         }
 
         if (p.geoConstraint?.preferNear === "center") {
