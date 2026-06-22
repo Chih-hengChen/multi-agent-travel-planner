@@ -24,12 +24,16 @@ import { executeFinalizePlan } from "../tools/definitions/finalize-plan.js";
 import type { Logger } from "pino";
 
 function toToolResultLike(toolName: string, result: ToolResult, fallbackLevel?: number): ToolResultLike {
+  const inner = (result.data && typeof result.data === "object" && !Array.isArray(result.data))
+    ? result.data as Record<string, unknown>
+    : {};
   return {
     toolName,
     success: result.success,
     data: result.data,
     error: result.error,
     fallbackLevel: fallbackLevel ?? (result.success ? 0 : 1),
+    ...inner,
   };
 }
 
