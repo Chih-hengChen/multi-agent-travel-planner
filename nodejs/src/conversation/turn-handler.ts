@@ -545,7 +545,10 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
           ? (lastMsg.content as Array<{ type: string; text?: string }>).find(c => c.type === "text")?.text ?? "行程已生成"
           : "行程已生成");
 
-      return { newState: ConversationState.COMPLETED, replyText };
+      const st = result.state;
+      const planResult = st.budgetBreakdown ? buildPlanSummaryFromAgentState(st) : undefined;
+
+      return { newState: ConversationState.COMPLETED, replyText, planResult };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { newState: ConversationState.ERROR_RECOVERABLE, replyText: `行程生成失败:${msg}`, error: msg };
@@ -815,5 +818,86 @@ function flightToOption(f: Flight): TransportOption {
     price: f.price,
     note: `${f.airline} ${f.cabinClass}`,
     isRecommended: false,
+  };
+}
+
+function buildPlanSummaryFromAgentState(st: import("../types/index.js").PlanSummary): import("../types/index.js").PlanSummary;
+function buildPlanSummaryFromAgentState(st: import("../runtime/state.js").AgentState): any {
+  const bb = st.budgetBreakdown;
+  const prefs = st.preferences;
+  const hotel = st.selectedHotel as { name?: string; starRating?: number; userRating?: number; pricePerNight?: number } | undefined;
+  const outboundOpt = st.selectedOutbound as { flightNo?: string; trainNo?: string; departStation?: string; arriveStation?: string; departTime?: string; arriveTime?: string; price?: number; airline?: string; mode?: string; duration?: string } | undefined;
+  const returnOpt = st.selectedReturn as typeof outboundOpt;
+
+  const flightCost = (outboundOpt?.price ?? 0) + (returnOpt?.price ?? 0);
+  const hotelCost = (hotel?.pricePerNight ?? 0) * (prefs ? Math.max(1, Math.round(((new Date(prefs.endDate).getTime() - new Date(prefs.startDate).getTime()) / 86_400_000) + 1) : 0);
+
+  const oldDayPlans = (st.dayPlans ?? []).map(dp => {
+    const activities: any[] = [];
+    const slots = [
+      { key: "morning", slot: dp.morning, label: "morning" as const },
+      { key: "afternoon", slot: dp.afternoon, label: "afternoon" as const },
+      { key: "evening", slot: dp.evening, label: "evening" as const },
+    ];
+    for (const s of slots) {
+      if (!s.slot?.attractions?.length) continue;
+      for (const a of s.slot.attractions) {
+        activities.push({
+          name: a.name,
+          subType: a.category === "restaurant" ? "dining" : "attraction",
+          timeSlot: s.label,
+          durationHours: Math.round((a.estimatedDurationMin ?? 60) / 60 * 10) / 10 || 1,
+          price: a.estimatedCost ?? 0,
+          description: a.description ?? "",
+          category: a.category === "restaurant" ? "dining" : "景点",
+          mealType: a.category === "restaurant" ? "lunch" : undefined,
+        });
+      }
+      if (s.slot.transitToNext) {
+        const t = s.slot.transitToNext;
+        activities.push({
+          name: `${t.from} → ${t.to} (${t.mode === "walking" ? "步行" : t.mode === "transit" ? "地铁/公交" : t.mode})`,
+          subType: "transit",
+          timeSlot: s.label,
+          durationHours: Math.round(t.durationMin / 60 * 10) / 10 || 0.5,
+          price: t.costAmount ?? 0,
+          description: `${t.from} → ${t.to} ${t.steps?.join(" → ") ?? ""}`,
+          category: "transit",
+        });
+      }
+    }
+    return { date: dp.date, activities };
+  });
+
+  return {
+    destination: prefs?.preferredDestination ?? "",
+    country: "中国",
+    departureCity: prefs?.departureCity,
+    departureDate: prefs?.startDate,
+    returnDate: prefs?.endDate,
+    numTravelers: prefs?.numTravelers,
+    flightCost,
+    trainCost: 0,
+    hotelCost,
+    activityCost: (bb?.byCategory?.attractions ?? 0) + (bb?.byCategory?.food ?? 0) + (bb?.byCategory?.other ?? 0),
+    totalCost: bb?.totalCost ?? 0,
+    budget: bb?.budgetLimit ?? 0,
+    withinBudget: bb?.isWithinBudget ?? true,
+    adjustmentRounds: 0,
+    hotelName: hotel?.name ?? "",
+    hotelStarRating: hotel?.starRating,
+    hotelUserRating: hotel?.userRating,
+    hotelPricePerNight: hotel?.pricePerNight,
+    days: oldDayPlans.length,
+    highlights: [],
+    warnings: [],
+    transportMode: outboundOpt?.mode === "train" ? "train" : "flight",
+    outboundFlights: outboundOpt?.flightNo ? [{ flightNo: outboundOpt.flightNo, airline: outboundOpt.airline ?? "", departureCity: outboundOpt.departStation ?? "", arrivalCity: outboundOpt.arriveStation ?? "", departureTime: outboundOpt.departTime ?? "", arrivalTime: outboundOpt.arriveTime ?? "", price: outboundOpt.price ?? 0, durationHours: 2.5, stops: 0, cabinClass: "economy" } as any] : [],
+    returnFlights: returnOpt?.flightNo ? [{ flightNo: returnOpt.flightNo, airline: returnOpt.airline ?? "", departureCity: returnOpt.departStation ?? "", arrivalCity: returnOpt.arriveStation ?? "", departureTime: returnOpt.departTime ?? "", arrivalTime: returnOpt.arriveTime ?? "", price: returnOpt.price ?? 0, durationHours: 2.5, stops: 0, cabinClass: "economy" } as any] : [],
+    trainOutbound: null,
+    trainReturn: null,
+    hotels: hotel ? [hotel] : [],
+    dayPlans: oldDayPlans,
+    budgetBreakdown: bb,
   };
 }
