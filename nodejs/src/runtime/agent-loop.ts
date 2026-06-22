@@ -1,4 +1,5 @@
 import type { Message, ContentBlock, ToolDef } from "../api/llm-client.js";
+import { settings } from "../config/settings.js";
 import {
   type AgentState,
   type Phase,
@@ -17,7 +18,8 @@ import { buildSystemPrompt, stateSummary } from "./system-prompt.js";
 export { stateSummary, buildSystemPrompt } from "./system-prompt.js";
 import { listToolsForPhase } from "../tools/policy.js";
 
-export const MAX_ITERATIONS = 50;
+export const MAX_ITERATIONS = 20;
+export const MAX_STALE_ITERS = 5;
 export const MAX_REJECTIONS_PER_ITER = 3;
 
 export class AgentLoopOverflowError extends Error {
@@ -83,6 +85,8 @@ export interface LoopResult {
   state: AgentState;
   messages: Message[];
   iterations: number;
+  forceStopped?: boolean;
+  reason?: string;
 }
 
 interface ExecutedTool {
@@ -93,8 +97,8 @@ interface ExecutedTool {
 
 export function pickModel(phase: Phase): string {
   switch (phase) {
-    case "planning":  return "heavy-llm";
-    default:          return "light-llm";
+    case "planning":  return settings.LLM_MODEL;
+    default:          return settings.LLM_LIGHT_MODEL;
   }
 }
 
@@ -199,6 +203,7 @@ export async function runAgentLoop(
     ...initialMessages,
     { role: "user", content: userMessage },
   ];
+  let staleCount = 0;
 
   let consecutiveRejections = 0;
   let jsonRepairAttempts = 0;
@@ -316,7 +321,26 @@ export async function runAgentLoop(
     }
 
     state = applyToolEffects(state, executed.map(e => e.result));
+    const prevPhase = state.phase;
     state = maybeAdvancePhase(state);
+
+    if (state.phase === prevPhase) {
+      staleCount++;
+      if (staleCount >= MAX_STALE_ITERS) {
+        const phaseDescs: Record<Phase, string> = {
+          gathering: "偏好未收集完整,工具返回空",
+          searching: "检索工具均返回空数据,candidateTransports/candidateHotels 为空",
+          selecting: "选择工具未设置 selectedOutbound/selectedHotel",
+          planning: "行程编排未产出 dayPlans",
+          completed: "已完成",
+        };
+        const reason = phaseDescs[state.phase] ?? `卡在 ${state.phase} 阶段 ${staleCount} 轮无推进`;
+        deps.emit?.emit({ type: "stale_abort", iter, phase: state.phase, staleCount, reason });
+        return { state, messages, iterations: iter + 1, forceStopped: true, reason };
+      }
+    } else {
+      staleCount = 0;
+    }
 
     if (canFinish(state)) {
       return { state, messages, iterations: iter + 1 };

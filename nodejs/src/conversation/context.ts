@@ -51,6 +51,7 @@ export interface ConversationContext {
   outboundTransportPreference?: string;
   returnTransportPreference?: string;
   specialRequests?: string;
+  transportPreference?: string;
   mustVisitAttractions?: string[];
 
   transportSearchResult?: TransportSearchResult;

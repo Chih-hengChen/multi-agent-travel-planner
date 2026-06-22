@@ -25,6 +25,7 @@ import type { Message } from "../api/llm-client.js";
 import { withSessionId } from "../logging/session-context.js";
 import { createInitialAgentState } from "../runtime/state.js";
 import { runAgentLoop, type SSEEmitter, type LoopResult, type LLMCaller, type ToolExecutor, type LLMResponse, type LLMCallOptions } from "../runtime/agent-loop.js";
+import { extractText } from "../api/llm-response-parser.js";
 import { createSSEBridge } from "../runtime/sse.js";
 
 export interface TurnResult {
@@ -128,6 +129,10 @@ export class TurnHandler {
 
     if (Object.keys(extracted).length > 0) {
       Object.assign(ctx, mergeExtracted(ctx, extracted));
+      if (!ctx.transportPreference) {
+        ctx.transportPreference = (extracted.outboundTransportPreference as string)
+          ?? (extracted.returnTransportPreference as string);
+      }
     }
 
     const newState = advanceState(ctx, settings.MAX_GATHERING_TURNS);
@@ -378,7 +383,27 @@ ${optionsStr}
     userMessage: string,
     onProgress?: ProgressCallback,
   ): Promise<TurnResult> {
-    const agentState: import("../runtime/state.js").AgentState = ctx.agentState ?? createInitialAgentState();
+    const agentState: import("../runtime/state.js").AgentState = ctx.agentState ?? buildSeedAgentState(ctx);
+
+function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state.js").AgentState {
+  const base = createInitialAgentState();
+  if (ctx.destination) {
+    base.preferences = {
+      destination: ctx.destination,
+      preferredDestination: ctx.destination,
+      departureCity: ctx.departureCity ?? "未知",
+      startDate: ctx.startDate ?? "",
+      endDate: ctx.endDate ?? "",
+      numTravelers: ctx.numTravelers ?? 1,
+      budget: ctx.budget ?? 0,
+      accommodationStyle: (ctx.accommodationStyle as any) ?? "comfort",
+      travelInterests: ctx.travelInterests ?? [],
+      transportPreference: (ctx.outboundTransportPreference as any) ?? "no_preference",
+    };
+    base.phase = "searching";
+  }
+  return base;
+}
     const messages: Message[] = ctx.messageHistory.map(m => ({
       role: m.role === "user" ? "user" : "assistant",
       content: [{ type: "text" as const, text: m.content }],
@@ -392,6 +417,7 @@ ${optionsStr}
           system: opts.systemPrompt,
           max_tokens: opts.maxTokens,
           temperature: opts.temperature,
+          thinking: { type: "disabled" },
         };
         if (opts.tools.length > 0) { body.tools = opts.tools; }
 
@@ -402,9 +428,9 @@ ${optionsStr}
           signal: AbortSignal.timeout(120_000),
         });
         if (!resp.ok) throw new Error(`LLM API ${resp.status}: ${await resp.text()}`);
-        const data = await resp.json() as { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason?: string };
+        const data = await resp.json() as { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown>; thinking?: string }>; stop_reason?: string };
 
-        const textBlocks = data.content.filter(c => c.type === "text").map(c => c.text ?? "").join("");
+        const textBlocks = extractText(data as any);
         const toolCalls = data.content.filter(c => c.type === "tool_use").map(c => ({
           id: c.id, name: c.name!, input: c.input!,
         }));
@@ -419,12 +445,22 @@ ${optionsStr}
       },
     };
 
-    const schemaLookup: import("../runtime/validate-tool-calls.js").SchemaLookup = {
-      getSchema(_name) { return { safeParse: (v: unknown) => ({ success: true, data: v }) }; },
-      getPrecondition(_name) { return undefined; },
+    const schemaLookup: import("../runtime/validate-tool-calls.js").SchemaLookup = (_name: string) => {
+      return { safeParse: (v: unknown) => ({ success: true, data: v }) } as any;
     };
 
-    const emit = onProgress ? createSSEBridge((event, data) => onProgress({ phase: "", progress: 0, message: `${event}: ${JSON.stringify(data)}`, eta: 0 })) : undefined;
+    const emit = onProgress ? createSSEBridge((event, data) => {
+      const msg = data as Record<string, unknown> | undefined;
+      const phase = (msg?.phase as string) ?? "";
+      const iter = (msg?.iteration as number) ?? 0;
+      const total = Math.max(iter + 1, 1);
+      onProgress({
+        phase,
+        progress: Math.round((iter / 8) * 100),
+        message: (msg?.message as string) ?? (msg?.thought as string)?.slice(0, 200) ?? event,
+        eta: Math.max(0, (8 - total) * 5),
+      });
+    }) : undefined;
 
     try {
       const result = await runAgentLoop(ctx.sessionId, agentState, messages, userMessage, {

@@ -2,6 +2,7 @@ import { settings } from "../config/settings.js";
 import type { ExtractedFields } from "./context.js";
 import * as infoExtractPrompt from "../prompts/info-extract.js";
 import { sessionLogger } from "../logging/session-logger.js";
+import { extractText } from "../api/llm-response-parser.js";
 
 function validateField(key: string, value: unknown): boolean {
   if (value === undefined || value === null) return false;
@@ -93,6 +94,7 @@ export class InfoExtractor {
       messages: [{ role: "user", content: prompt }],
       temperature: settings.LLM_TEMPERATURE_STRUCTURED,
       max_tokens: settings.LLM_MAX_TOKENS,
+      thinking: { type: "disabled" },
     };
 
     const resp = await fetch(`${settings.LLM_BASE_URL}/v1/messages`, {
@@ -103,15 +105,16 @@ export class InfoExtractor {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     const data = (await resp.json()) as {
       content: Array<{ type: string; text: string }>;
       error?: { message: string };
     };
+    const text = extractText(data);
     if (data.error) throw new Error(`Anthropic API error: ${data.error.message}`);
-    return data.content[0].text;
+    return text;
   }
 
   private async callOpenAi(prompt: string): Promise<string> {
@@ -127,13 +130,13 @@ export class InfoExtractor {
         temperature: settings.LLM_TEMPERATURE_STRUCTURED,
         max_tokens: settings.LLM_MAX_TOKENS,
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     const data = (await resp.json()) as {
       choices: Array<{ message: { content: string } }>;
     };
-    return data.choices[0].message.content;
+    return data.choices[0]?.message?.content;
   }
 
   private parseResponse(raw: string): ExtractedFields {

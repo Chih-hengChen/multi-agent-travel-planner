@@ -4,6 +4,7 @@ import { ConversationState } from "../conversation/state-machine.js";
 import { settings } from "../config/settings.js";
 import * as gatheringPrompt from "../prompts/gathering-question.js";
 import { sessionLogger } from "../logging/session-logger.js";
+import { extractText } from "../api/llm-response-parser.js";
 
 const FIELD_LABELS: Record<string, string> = {
   destination: "目的地",
@@ -100,12 +101,13 @@ export class GatheringAgent {
           messages,
           temperature: settings.LLM_TEMPERATURE_CHAT,
           max_tokens: settings.LLM_MAX_TOKENS,
+          thinking: { type: "disabled" },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(120_000),
       });
-      const data = (await resp.json()) as { content: Array<{ type: string; text: string }>; error?: { message: string } };
+      const data = (await resp.json()) as { content: Array<{ type: string; text: string; thinking: string }>; error?: { message: string } };
       if (data.error) throw new Error(`Anthropic API error: ${data.error.message}`);
-      raw = data.content[0].text;
+      raw = extractText(data);
     } else {
       const resp = await fetch(`${settings.LLM_BASE_URL}/chat/completions`, {
         method: "POST",
@@ -119,10 +121,10 @@ export class GatheringAgent {
           temperature: settings.LLM_TEMPERATURE_CHAT,
           max_tokens: settings.LLM_MAX_TOKENS,
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(120_000),
       });
       const data = (await resp.json()) as { choices: Array<{ message: { content: string } }> };
-      raw = data.choices[0].message.content;
+      raw = data.choices[0]?.message?.content ?? "";
     }
 
     if (sessionId) {
