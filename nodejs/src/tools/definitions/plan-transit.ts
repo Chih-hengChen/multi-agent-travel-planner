@@ -107,10 +107,11 @@ export async function executePlanTransit(
   if (!end) end = await amap.geocode(input.to);
 
   if (!start || !end) {
+    const transit = haversineEstimate(input.from, input.to, start, end, mode);
     return {
       toolName: "plan_transit",
-      success: false,
-      error: `Cannot resolve coordinates for ${!start ? "from" : "to"}: ${!start ? input.from : input.to}`,
+      success: true,
+      data: { dayIdx: input.dayIdx ?? 0, transit } satisfies PlanTransitResult,
       fallbackLevel: 2,
     };
   }

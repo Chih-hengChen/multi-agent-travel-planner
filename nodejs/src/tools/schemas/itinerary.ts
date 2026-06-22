@@ -3,7 +3,7 @@ import { ActivitySchema } from "./activity.js";
 import { TransitSegmentSchema } from "./transit.js";
 
 export const ItinerarySlotSchema = z.object({
-  attractions: z.array(ActivitySchema).min(1).max(3),
+  attractions: z.array(ActivitySchema).max(10),
   transitToNext: TransitSegmentSchema.optional(),
   notes: z.string().optional(),
 });

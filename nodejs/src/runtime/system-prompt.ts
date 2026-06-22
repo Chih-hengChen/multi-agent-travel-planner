@@ -106,7 +106,7 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 - dining 每项: meal("breakfast"|"lunch"|"dinner"), restaurant(Activity|可选), isLocalSpecialty(bool), alternatives(可选)
 - budgetBreakdown.totalCost 必须等于 byCategory 各项之和
 - 整个 rawJson 必须是一次 JSON.parse 就能解析的合法 JSON,不要用 markdown 代码块包裹
-- 每个 dayPlan 的 morning/afternoon/evening 至少一个有 attractions
+- 每个 dayPlan 的 morning/afternoon/evening 至少一个有 attractions; 没有活动的 slot 直接省略不要输出
 
 【生成步骤】
 1. 用 search_attractions/search_restaurants 收集数据
