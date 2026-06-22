@@ -90,7 +90,7 @@ const TOOL_PHASE_POLICY: Record<ToolName, ToolPhasePolicyEntry> = {
   },
   finalize_plan: {
     name: "finalize_plan",
-    description: "输出最终行程 JSON",
+    description: "输出最终行程(参数 rawJson=完整 JSON 字符串,格式见 planning 阶段提示)",
     allowedPhases: ["planning"],
   },
 };
