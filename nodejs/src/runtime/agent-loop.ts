@@ -18,8 +18,8 @@ import { buildSystemPrompt, stateSummary } from "./system-prompt.js";
 export { stateSummary, buildSystemPrompt } from "./system-prompt.js";
 import { listToolsForPhase, isToolAllowedInPhase } from "../tools/policy.js";
 
-export const MAX_ITERATIONS = 20;
-export const MAX_STALE_ITERS = 5;
+export const MAX_ITERATIONS = 30;
+export const MAX_STALE_ITERS = 10;
 export const MAX_REJECTIONS_PER_ITER = 3;
 
 export class AgentLoopOverflowError extends Error {
