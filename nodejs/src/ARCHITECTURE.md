@@ -185,6 +185,44 @@ UserPreferences
     TravelPlanState (完整行程)
 ```
 
+### Runtime Agent Loop（新架构，替代旧 Pipeline）
+
+```
+Agent Loop (src/runtime/agent-loop.ts)
+  │  phase: gathering → searching → selecting → planning → completed
+  │
+  ├─ gathering: InfoExtractor 提取偏好 → advanceState
+  ├─ searching: LLM 并行调 search_flights/search_hotels/search_attractions/...
+  │    → candidateTransports + candidateHotels 齐全 → selecting
+  ├─ selecting: LLM 展示候选文本 → loop 暂停 pausedForSelection
+  │    → 前端 POST /select → applyUserSelection() → maybeAdvancePhase
+  │    → selected* 齐全 → planning（恢复 agent loop）
+  ├─ planning: LLM 调 search_attractions/search_restaurants/plan_transit
+  │    → 最后调 finalize_plan(rawJson=完整 JSON) → dayPlans + budgetBreakdown
+  │    → maybeAdvancePhase → completed
+  └─ completed: canFinish → 返回 TurnResult + planResult
+```
+
+**红线守卫**: `select_transport`/`select_hotel` 的 `allowedPhases:[]`，LLM 在任何阶段不可调用。仅 `/api/chat/:sid/select` API 可注入选择。
+
+**工具策略** (`src/tools/policy.ts`): 每个工具按 phase 控制可用性。`isToolAllowedInPhase()` 在 agent loop 内过滤工具列表。
+
+**plan_transit**: 不调 geocode API。先 `findCoordsByName`（模糊匹配 POI 坐标），找不到直接 haversine 距离估算。避免地名无法解析导致的 100% 失败率。
+
+**finalize_plan**: Zod `TravelPlanSchema` 验证 → 质量自检（连锁品牌、本地特色占比、transitToNext）→ 写入 `dayPlans`/`budgetBreakdown`。
+
+**关键文件**:
+| 文件 | 职责 |
+|------|------|
+| `src/runtime/agent-loop.ts` | 主循环（30 iter max, 10 stale max, JSON repair ×3） |
+| `src/runtime/state.ts` | AgentState + maybeAdvancePhase + applyUserSelection + computeTravelDays |
+| `src/runtime/system-prompt.ts` | 分 phase 系统提示词（含 TravelPlanSchema 格式示例） |
+| `src/runtime/validate-tool-calls.ts` | 工具调用校验（phase 权限 + 前置条件 + schema） |
+| `src/runtime/apply-tool-effects.ts` | 工具结果写入 state（含 finalize_plan reducer） |
+| `src/runtime/tool-adapter.ts` | buildTools() 注册 + 特化 executor 调度 |
+| `src/tools/policy.ts` | TOOL_PHASE_POLICY + 工具 fallback 链 |
+| `src/tools/schemas/` | Zod schema（TravelPlan/Activity/ItinerarySlot/DiningPlan 等） |
+
 ## 数据源体系
 
 全部数据源均为真实 API，无任何 mock 数据集：

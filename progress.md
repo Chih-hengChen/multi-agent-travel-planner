@@ -2,6 +2,13 @@
 
 ## 已完成
 
+### Agent Loop 红线守卫 + 工具修复 + 全链路打通 (2026-06-22)
+14 commits: `25366ee` ~ `7e9aece`
+- **红线**: 禁止 LLM 自主选择交通/酒店 → `allowedPhases:[]` + selecting 阶段暂停 + API 确认恢复
+- **JSON 解析**: planning prompt 对齐 TravelPlanSchema、ItinerarySlot 放宽、computeTravelDays off-by-one 修复
+- **工具修复**: plan_transit/finalize_plan 注册到 toolDefs、特化 executor 优先级、geocode 移除改用 POI 坐标+haversine
+- **前端**: 交通卡片不被酒店覆盖、agent loop 成功后 planResult 正确发射 SSE
+
 ### P2 Agent Loop 可观测性 + 数据飞轮 (2026-06-22)
 - `9557b4e` docs: P2-A/B/C contracts 文档（~1500 行）
 - `c021526` feat(p2-a): trace-viewer 三栏 HTML 渲染器 + 4 mock fixtures + 26 测试
