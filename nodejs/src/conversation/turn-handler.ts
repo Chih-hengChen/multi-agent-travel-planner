@@ -510,14 +510,14 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
       }
 
       if (result.pausedForSelection) {
-        const transportResult = result.state.candidateTransports?.length
-          ? { outbound: result.state.candidateTransports.filter((t: TransportOption) =>
-              (t as { departStation?: string }).departStation === ctx.departureCity ||
-              t.mode === "flight" || t.mode === "train"
-            ).slice(0, 4), return: result.state.candidateTransports.filter((t: TransportOption) =>
-              (t as { arriveStation?: string }).arriveStation === ctx.departureCity ||
-              t.mode === "flight" || t.mode === "train"
-            ).slice(0, 4) }
+        const allTransports = result.state.candidateTransports ?? [];
+        const depCity = ctx.departureCity ?? "";
+        const destCity = ctx.destination ?? "";
+        const transportResult = allTransports.length > 0
+          ? {
+              outbound: allTransports.filter(t => t.departStation?.includes(depCity)).slice(0, 4),
+              return: allTransports.filter(t => t.departStation?.includes(destCity)).slice(0, 4),
+            }
           : undefined;
         const hotelOptions = result.state.candidateHotels?.slice(0, 5);
 
