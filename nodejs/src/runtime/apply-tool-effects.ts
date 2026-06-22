@@ -186,8 +186,8 @@ export const TOOL_EFFECT_HANDLERS: Record<string, StateReducer> = {
   collect_preferences:      (s, d) => ({ ...s, preferences: mergePrefs(s.preferences, d) }),
   search_baike:             (s, d) => ({ ...s, baikeKnowledge: d.summary }),
   search_weather:           (s, d) => ({ ...s, weather: d }),
-  search_attractions:       (s, d) => appendCandidates(s, "candidateAttractions", d.items ?? [], d.scores ?? {}),
-  search_hotels:            (s, d) => appendCandidates(s, "candidateHotels", d.items ?? [], d.scores ?? {}),
+  search_attractions:       (s, d) => appendCandidates(s, "candidateAttractions", d.activities ?? d.items ?? [], d.scores ?? {}),
+  search_hotels:            (s, d) => appendCandidates(s, "candidateHotels", d.hotels ?? d.items ?? [], d.scores ?? {}),
   search_restaurants:       (s, d) => d.scope === "attraction"
                                        ? appendPlanningRestaurants(s, d.near ?? "(unknown)", d.items ?? [], d.scores ?? {})
                                        : appendCandidates(s, "candidateRestaurants", d.items ?? [], d.scores ?? {}),
