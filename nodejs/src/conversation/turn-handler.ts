@@ -821,8 +821,7 @@ function flightToOption(f: Flight): TransportOption {
   };
 }
 
-function buildPlanSummaryFromAgentState(st: import("../types/index.js").PlanSummary): import("../types/index.js").PlanSummary;
-function buildPlanSummaryFromAgentState(st: import("../runtime/state.js").AgentState): any {
+function buildPlanSummaryFromAgentState(st: any): any {
   const bb = st.budgetBreakdown;
   const prefs = st.preferences;
   const hotel = st.selectedHotel as { name?: string; starRating?: number; userRating?: number; pricePerNight?: number } | undefined;
@@ -830,7 +829,8 @@ function buildPlanSummaryFromAgentState(st: import("../runtime/state.js").AgentS
   const returnOpt = st.selectedReturn as typeof outboundOpt;
 
   const flightCost = (outboundOpt?.price ?? 0) + (returnOpt?.price ?? 0);
-  const hotelCost = (hotel?.pricePerNight ?? 0) * (prefs ? Math.max(1, Math.round(((new Date(prefs.endDate).getTime() - new Date(prefs.startDate).getTime()) / 86_400_000) + 1) : 0);
+  const nights = prefs ? Math.max(1, Math.round((new Date(prefs.endDate).getTime() - new Date(prefs.startDate).getTime()) / 86_400_000) + 1) : 1;
+  const hotelCost = (hotel?.pricePerNight ?? 0) * nights;
 
   const oldDayPlans = (st.dayPlans ?? []).map(dp => {
     const activities: any[] = [];
