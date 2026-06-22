@@ -5,6 +5,7 @@ import { InfoExtractor } from "../conversation/info-extractor.js";
 import { GatheringAgent } from "../agents/gathering-agent.js";
 import { TurnHandler } from "../conversation/turn-handler.js";
 import { ConversationOrchestrator } from "../orchestrator/conversation-orchestrator.js";
+import { saveUserRating, listRatedSessions, saveSessionFeedback } from "../feedback/feedback-store.js";
 
 const sessionStore = createSessionStore();
 const infoExtractor = new InfoExtractor();
@@ -73,5 +74,42 @@ export function registerRoutes(app: FastifyInstance) {
     } catch {
       return reply.status(404).send({ error: "Session not found" });
     }
+  });
+
+  app.post("/api/feedback", async (request, reply) => {
+    const body = request.body as {
+      sid: string;
+      plan?: Record<string, unknown>;
+      traceSummary?: Record<string, unknown>;
+      userMessage?: string;
+    };
+    if (!body.sid) {
+      return reply.status(400).send({ error: "sid is required" });
+    }
+    saveSessionFeedback(body.sid, {
+      plan: (body.plan ?? {}) as any,
+      traceSummary: (body.traceSummary ?? {}) as any,
+      userMessage: body.userMessage ?? "",
+    });
+    return reply.send({ ok: true });
+  });
+
+  app.post("/api/feedback/:sid/rate", async (request, reply) => {
+    const { sid } = (request as any).params as { sid: string };
+    const body = request.body as { score?: number; feedback?: string };
+    if (!body.score || body.score < 1 || body.score > 5) {
+      return reply.status(400).send({ error: "score must be 1-5" });
+    }
+    const ok = saveUserRating(sid, {
+      score: body.score,
+      feedback: body.feedback,
+      ratedAt: new Date().toISOString(),
+    });
+    if (!ok) return reply.status(404).send({ error: "Session not found" });
+    return reply.send({ ok: true });
+  });
+
+  app.get("/api/feedback/sessions", async () => {
+    return { sessions: listRatedSessions() };
   });
 }

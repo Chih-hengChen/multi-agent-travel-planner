@@ -48,6 +48,19 @@
   .tl-transit .sep{color:#d1d5db}
   .ref-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;margin-bottom:4px;font-size:0.75rem}
 
+.rating-wrap{background:linear-gradient(135deg,#fefce8,#f0fdf4);border:1px solid #fde68a;border-radius:12px;padding:16px;margin-top:12px}
+.rating-wrap h3{font-size:0.9rem;font-weight:600;color:#374151;margin-bottom:8px}
+.rating-stars{display:flex;gap:4px;font-size:1.5rem;cursor:pointer}
+.rating-stars .star{color:#d1d5db;transition:color .15s}
+.rating-stars .star.active{color:#f59e0b}
+.rating-stars .star:hover{color:#fbbf24}
+.rating-text{font-size:0.75rem;color:#6b7280;margin-top:4px}
+.rating-feedback-input{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;font-size:0.8rem;resize:vertical;min-height:50px;margin-top:8px}
+.rating-submit-btn{background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;margin-top:8px;transition:background .15s}
+.rating-submit-btn:hover{background:#d97706}
+.rating-submit-btn:disabled{background:#d1d5db;cursor:not-allowed}
+.rating-done{color:#059669;font-size:0.85rem;font-weight:500}
+
 </style>
 </head>
 <body class="bg-gray-50 h-screen flex flex-col">
@@ -855,6 +868,91 @@ async function streamConversation(text, botBubble) {
   return { fullText, planData };
 }
 
+function renderRatingWidget(sid) {
+  const wrap = document.createElement('div');
+  wrap.className = 'rating-wrap';
+  wrap.id = `rating-${sid}`;
+  let selectedScore = 0;
+
+  function drawStars() {
+    let html = '<div class="rating-stars">';
+    for (let i = 1; i <= 5; i++) {
+      html += `<span class="star${i <= selectedScore ? ' active' : ''}" data-score="${i}">★</span>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  wrap.innerHTML = `
+    <h3>对这个行程满意吗？</h3>
+    ${drawStars()}
+    <div class="rating-text">${selectedScore > 0 ? ['','较差','一般','不错','满意','非常满意'][selectedScore] : '点击星星评分'}</div>
+    <textarea class="rating-feedback-input" placeholder="可选：写下你的反馈建议..."></textarea>
+    <button class="rating-submit-btn">提交评分</button>
+  `;
+
+  const stars = wrap.querySelectorAll('.star');
+  const text = wrap.querySelector('.rating-text');
+  const btn = wrap.querySelector('.rating-submit-btn');
+  const textarea = wrap.querySelector('.rating-feedback-input');
+
+  stars.forEach(s => {
+    s.addEventListener('click', () => {
+      selectedScore = +s.dataset.score;
+      stars.forEach((st, i) => st.classList.toggle('active', i < selectedScore));
+      text.textContent = ['','较差','一般','不错','满意','非常满意'][selectedScore];
+    });
+    s.addEventListener('mouseenter', () => {
+      const v = +s.dataset.score;
+      stars.forEach((st, i) => st.style.color = i < v ? '#fbbf24' : '#d1d5db');
+    });
+    s.addEventListener('mouseleave', () => {
+      stars.forEach((st, i) => { st.style.color = st.classList.contains('active') ? '#f59e0b' : '#d1d5db'; });
+    });
+  });
+
+  btn.addEventListener('click', async () => {
+    if (selectedScore === 0) return;
+    btn.disabled = true;
+    btn.textContent = '提交中...';
+    try {
+      const resp = await fetch(`/api/feedback/${sid}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: selectedScore, feedback: textarea.value.trim() || undefined }),
+      });
+      if (resp.ok) {
+        wrap.innerHTML = '<div class="rating-done">感谢反馈！评分已记录 ✨</div>';
+      } else {
+        btn.disabled = false;
+        btn.textContent = '提交失败，重试';
+      }
+    } catch {
+      btn.disabled = false;
+      btn.textContent = '网络错误，重试';
+    }
+  });
+
+  return wrap;
+}
+
+let lastRatingSid = null;
+
+function insertRatingAfterPlan(sid) {
+  if (lastRatingSid === sid) return;
+  lastRatingSid = sid;
+  setTimeout(() => {
+    const cards = chatEl.querySelectorAll('.plan-card');
+    if (cards.length === 0) return;
+    const lastCard = cards[cards.length - 1];
+    const existing = document.getElementById(`rating-${sid}`);
+    if (existing) return;
+    const rating = renderRatingWidget(sid);
+    lastCard.insertAdjacentElement('afterend', rating);
+    scrollBottom();
+  }, 300);
+}
+
 async function sendMessage(text) {
   if (streaming || !text.trim() || !sessionId) return;
   streaming = true;
@@ -863,7 +961,10 @@ async function sendMessage(text) {
 
   const botBubble = createBotBubble();
   try {
-    await streamConversation(text, botBubble);
+    const result = await streamConversation(text, botBubble);
+    if (result.planData && sessionId) {
+      insertRatingAfterPlan(sessionId);
+    }
   } catch (err) {
     finalizeBotBubble(botBubble, '网络错误，请重试', null);
   }
