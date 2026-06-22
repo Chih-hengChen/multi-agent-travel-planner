@@ -2,6 +2,13 @@
 
 ## 已完成
 
+### P2 Agent Loop 可观测性 + 数据飞轮 (2026-06-22)
+- `9557b4e` docs: P2-A/B/C contracts 文档（~1500 行）
+- `c021526` feat(p2-a): trace-viewer 三栏 HTML 渲染器 + 4 mock fixtures + 26 测试
+- `5276a53` feat(p2-b): 反馈 API（/api/feedback）+ chat.html 1-5 星评分 UI + LLM 自评 + review-feedback CLI
+- `b460f4b` fix(runtime): LLM 响应格式兼容（extractText）+ Agent Loop 死循环检测（MAX_STALE_ITERS=5）+ transportPreference 字段映射
+- 旧 Pipeline 修复可用（thinking disabled, 真实 API），Agent Loop 仍因 stub tools 无法走通全流程
+
 ### RAG 第四轮实验:数据 bug 揭露 + 全量重测 (2026-06-21)
 完整记录在 `docs/rag-optimization-log.md` §10(追加章节,不改 §1-§9)。起因:用户质疑"成都攻略有数据却搜不出来",实地调查 store 后揭露 3 个被前三轮忽略的 bug:
 - **Bug A (阻断性)**:eval city="成都" vs store city="成都攻略",严格 `!==` 过滤 → 成都 20 条 query 全 0 命中。store 124 个 city 中 30+ 个带后缀("浙江攻略"/"香格里拉9日"...)。
