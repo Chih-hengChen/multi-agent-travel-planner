@@ -16,7 +16,7 @@ import {
 import { applyToolEffects, type ToolResultLike } from "./apply-tool-effects.js";
 import { buildSystemPrompt, stateSummary } from "./system-prompt.js";
 export { stateSummary, buildSystemPrompt } from "./system-prompt.js";
-import { listToolsForPhase } from "../tools/policy.js";
+import { listToolsForPhase, isToolAllowedInPhase } from "../tools/policy.js";
 
 export const MAX_ITERATIONS = 20;
 export const MAX_STALE_ITERS = 5;
@@ -79,6 +79,7 @@ export interface LoopDeps {
   schemaLookup: SchemaLookup;
   toolExecutor: ToolExecutor;
   emit?: SSEEmitter;
+  toolDefs?: ToolDef[];
 }
 
 export interface LoopResult {
@@ -217,7 +218,9 @@ export async function runAgentLoop(
       state = { ...state, _pendingBudgetFeedback: undefined };
     }
 
-    const tools = toToolDefs(state.phase);
+    const tools = deps.toolDefs && deps.toolDefs.length > 0
+      ? deps.toolDefs.filter(t => isToolAllowedInPhase(t.name, state.phase))
+      : toToolDefs(state.phase);
     const model = pickModel(state.phase);
 
     traceNow(sid, iter, {

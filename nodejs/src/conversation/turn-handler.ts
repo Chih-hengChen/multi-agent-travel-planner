@@ -14,7 +14,7 @@ import { IntentRouter } from "../intent-router/index.js";
 import type { RouteDecision } from "../intent-router/types.js";
 import { sessionLogger } from "../logging/session-logger.js";
 import { SourceResolver } from "../data-sources/source-resolver.js";
-import { createAgentLoopToolExecutor } from "../runtime/tool-adapter.js";
+import { createAgentLoopToolExecutor, getAgentLoopToolDefs } from "../runtime/tool-adapter.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
 import { BookingSource } from "../data-sources/booking-source.js";
 import { AmapSource } from "../data-sources/amap-source.js";
@@ -442,6 +442,7 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
 
     const resolver = this.createSourceResolver();
     const toolExecutor: ToolExecutor = createAgentLoopToolExecutor(resolver, this.log);
+    const toolDefs = getAgentLoopToolDefs(resolver, this.log);
 
     const schemaLookup: import("../runtime/validate-tool-calls.js").SchemaLookup = (_name: string) => {
       return { safeParse: (v: unknown) => ({ success: true, data: v }) } as any;
@@ -466,10 +467,16 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
         schemaLookup,
         toolExecutor,
         emit,
+        toolDefs,
       });
 
       ctx.agentState = result.state;
       ctx.updatedAt = Date.now();
+
+      if (result.forceStopped) {
+        const reason = result.reason ?? "Agent Loop 未在期限内完成";
+        return { newState: ConversationState.ERROR_RECOVERABLE, replyText: `行程规划中断:${reason}`, error: reason };
+      }
 
       const lastMsg = result.messages[result.messages.length - 1];
       const replyText = lastMsg && typeof lastMsg.content === "string"

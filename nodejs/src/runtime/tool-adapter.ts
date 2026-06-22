@@ -1,6 +1,7 @@
 import type { SourceResolver } from "../data-sources/source-resolver.js";
 import type { RegisteredTool, ToolResult } from "../tools/types.js";
 import type { ToolExecutor } from "./agent-loop.js";
+import type { ToolDef } from "../api/llm-client.js";
 import type { ToolCall } from "./validate-tool-calls.js";
 import type { ToolResultLike } from "./apply-tool-effects.js";
 import type { AgentState } from "./state.js";
@@ -80,15 +81,9 @@ function createAmapClient(): AmapClient {
   };
 }
 
-export function createAgentLoopToolExecutor(
-  resolver: SourceResolver,
-  log?: Logger,
-): ToolExecutor {
+function buildTools(resolver: SourceResolver, log?: Logger): Map<string, RegisteredTool> {
   const tools = new Map<string, RegisteredTool>();
-
-  const add = (t: RegisteredTool) => {
-    tools.set(t.name, t);
-  };
+  const add = (t: RegisteredTool) => tools.set(t.name, t);
 
   add(createSearchAttractionsTool(resolver, log));
   add(createSearchFlightsTool(resolver, log));
@@ -102,6 +97,23 @@ export function createAgentLoopToolExecutor(
   add(createSelectTransportTool());
   add(createSelectHotelTool());
 
+  return tools;
+}
+
+export function getAgentLoopToolDefs(resolver: SourceResolver, log?: Logger): ToolDef[] {
+  const tools = buildTools(resolver, log);
+  return [...tools.values()].map(t => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.input_schema as Record<string, unknown>,
+  }));
+}
+
+export function createAgentLoopToolExecutor(
+  resolver: SourceResolver,
+  log?: Logger,
+): ToolExecutor {
+  const tools = buildTools(resolver, log);
   const amapClient = createAmapClient();
 
   return {
