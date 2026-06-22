@@ -109,6 +109,35 @@ function buildTools(resolver: SourceResolver, log?: Logger): Map<string, Registe
   add(createSelectTransportTool());
   add(createSelectHotelTool());
 
+  add({
+    name: "plan_transit",
+    description: "市内交通规划(必填: from=起点, to=终点, dayIdx=天序号从0开始, mode=transit|walking|driving)",
+    input_schema: {
+      type: "object",
+      properties: {
+        from:   { type: "string", description: "起点名称" },
+        to:     { type: "string", description: "终点名称" },
+        dayIdx: { type: "integer", description: "天序号从0开始" },
+        mode:   { type: "string", enum: ["transit", "walking", "driving", "rideshare"], description: "交通方式" },
+      },
+      required: ["from", "to", "dayIdx"],
+    },
+    execute: async () => ({ success: false, error: "plan_transit is handled by special executor" }),
+  });
+
+  add({
+    name: "finalize_plan",
+    description: "输出最终行程(参数 rawJson=完整 JSON 字符串,格式见 planning 阶段提示)",
+    input_schema: {
+      type: "object",
+      properties: {
+        rawJson: { type: "string", description: "完整的 TravelPlan JSON 字符串" },
+      },
+      required: ["rawJson"],
+    },
+    execute: async () => ({ success: false, error: "finalize_plan is handled by special executor" }),
+  });
+
   return tools;
 }
 

@@ -32,7 +32,8 @@ export interface PlanTransitResult {
   transit: TransitSegment;
 }
 
-function findCoordsByName(name: string, state: AgentState): LatLng | undefined {
+function findCoordsByName(name: string | undefined, state: AgentState): LatLng | undefined {
+  if (!name) return undefined;
   interface HasCoords { name?: string; geoLocation?: { lat: number; lon: number } }
 
   for (const a of state.candidateAttractions ?? []) {
