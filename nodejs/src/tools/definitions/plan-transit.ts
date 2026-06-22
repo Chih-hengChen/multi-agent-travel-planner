@@ -32,27 +32,33 @@ export interface PlanTransitResult {
   transit: TransitSegment;
 }
 
+function fuzzyMatch(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a) || a.replace(/[（）()\[\]【】\s]/g, "").includes(b.replace(/[（）()\[\]【】\s]/g, ""));
+}
+
 function findCoordsByName(name: string | undefined, state: AgentState): LatLng | undefined {
   if (!name) return undefined;
   interface HasCoords { name?: string; geoLocation?: { lat: number; lon: number } }
 
   for (const a of state.candidateAttractions ?? []) {
     const act = a as unknown as HasCoords;
-    if (act.name && (act.name === name || act.name.includes(name) || name.includes(act.name)) && act.geoLocation) {
+    if (fuzzyMatch(act.name, name) && act.geoLocation) {
       return { lat: act.geoLocation.lat, lng: act.geoLocation.lon };
     }
   }
   for (const list of Object.values(state.planningRestaurants ?? {})) {
     for (const r of list ?? []) {
       const rest = r as unknown as HasCoords;
-      if (rest.name && (rest.name === name || rest.name.includes(name) || name.includes(rest.name)) && rest.geoLocation) {
+      if (fuzzyMatch(rest.name, name) && rest.geoLocation) {
         return { lat: rest.geoLocation.lat, lng: rest.geoLocation.lon };
       }
     }
   }
   for (const h of state.candidateHotels ?? []) {
     const hotel = h as unknown as { name?: string; geoLocation?: { lat: number; lon: number } };
-    if (hotel.name && (hotel.name === name || hotel.name.includes(name) || name.includes(hotel.name))) {
+    if (fuzzyMatch(hotel.name, name)) {
       if (hotel.geoLocation) return { lat: hotel.geoLocation.lat, lng: hotel.geoLocation.lon };
       return undefined;
     }
