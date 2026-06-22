@@ -131,7 +131,9 @@ export class TurnHandler {
     if (Object.keys(extracted).length > 0) {
       Object.assign(ctx, mergeExtracted(ctx, extracted));
       if (!ctx.transportPreference) {
-        ctx.transportPreference = (extracted.outboundTransportPreference as string)
+        ctx.transportPreference = (ctx.outboundTransportPreference as string)
+          ?? (ctx.returnTransportPreference as string)
+          ?? (extracted.outboundTransportPreference as string)
           ?? (extracted.returnTransportPreference as string);
       }
     }

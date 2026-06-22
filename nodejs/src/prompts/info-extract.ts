@@ -51,17 +51,24 @@ ${params.history}
 - "青旅"/"背包客" -> accommodationStyle: "budget"
 - 只要用户提到了住宿偏好（任何描述），都应提取为 accommodationStyle
 - "历史文化"/"胡同" -> travelInterests 中展开为 ["博物馆", "故宫", "胡同", "历史遗址"]
+- "经典景点"/"名胜古迹"/"古迹"/"打卡" -> travelInterests 中加入 "名胜古迹"
+- "城市漫步"/"citywalk"/"街拍"/"逛街"/"拍照" -> travelInterests 中加入 "城市漫步"
 - "美食"/"吃货" -> travelInterests 中加入 "美食"
 - "自然"/"风景" -> travelInterests 中加入 "自然风光"
 - "购物" -> travelInterests 中加入 "购物"
+- "主题乐园"/"游乐园"/"环球影城"/"迪士尼" -> travelInterests 中加入 "主题乐园"
+- **只要用户提到了任何游玩偏好或兴趣倾向,都必须提取到 travelInterests,不要跳过**
 - "高铁"/"动车"/"火车" -> outboundTransportPreference: "high_speed_rail"
 - "飞机"/"航班"/"机票" -> outboundTransportPreference: "flight"
+- "往返飞机"/"来回飞机"/"双飞机票" -> outboundTransportPreference: "flight", returnTransportPreference: "flight"
+- "往返高铁"/"来回高铁"/"双高" -> outboundTransportPreference: "high_speed_rail", returnTransportPreference: "high_speed_rail"
 - "随便"/"都行"/"都可以" -> outboundTransportPreference: "no_preference"
 - **去程返程独立偏好**：
   - "去程高铁，返程飞机" -> outboundTransportPreference: "high_speed_rail", returnTransportPreference: "flight"
   - "去程飞机，返程高铁" -> outboundTransportPreference: "flight", returnTransportPreference: "high_speed_rail"
   - "去程XX"只设置 outboundTransportPreference，"返程YY"只设置 returnTransportPreference
   - 如果只说了"高铁"没区分去返程 -> 两个字段设相同值
+  - 如果只说了"飞机"没区分去返程 -> 两个字段设相同值
 - 用户提到具体景点/地点名称时提取到 mustVisitAttractions 数组
 - "想去故宫、颐和园和国博" -> mustVisitAttractions: ["故宫", "颐和园", "国博"]
 - "还想去雍和宫拜一拜" -> 追加到 mustVisitAttractions

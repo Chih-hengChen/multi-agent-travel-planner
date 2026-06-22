@@ -179,7 +179,10 @@ export interface FieldContext {
   budget?: number;
   accommodationStyle?: string;
   travelInterests?: string[];
+  mustVisitAttractions?: string[];
   transportPreference?: string;
+  outboundTransportPreference?: string;
+  returnTransportPreference?: string;
   turnCount: number;
 }
 
@@ -196,11 +199,16 @@ export function advanceState(
 
   if (!basicsComplete) return ConversationState.GATHERING_BASICS;
 
+  const hasTransportPref = ctx.transportPreference
+    || ctx.outboundTransportPreference
+    || ctx.returnTransportPreference;
+  const hasTravelHints = (ctx.travelInterests?.length ?? 0) > 0
+    || (ctx.mustVisitAttractions?.length ?? 0) > 0;
   const preferencesComplete =
     ctx.budget != null &&
-    ctx.accommodationStyle &&
-    ctx.travelInterests?.length &&
-    ctx.transportPreference;
+    ctx.accommodationStyle != null &&
+    hasTravelHints &&
+    hasTransportPref;
 
   if (preferencesComplete || ctx.turnCount >= maxGatheringTurns) {
     return ConversationState.SEARCHING_TRANSPORT;
