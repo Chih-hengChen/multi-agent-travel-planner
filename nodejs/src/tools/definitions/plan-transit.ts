@@ -23,7 +23,7 @@ export interface AmapDirection {
 }
 
 export interface AmapClient {
-  geocode(name: string): Promise<LatLng | null>;
+  geocode(name: string, city?: string): Promise<LatLng | null>;
   directionTransit(start: LatLng, end: LatLng): Promise<AmapDirection | null>;
 }
 
@@ -51,8 +51,9 @@ function findCoordsByName(name: string | undefined, state: AgentState): LatLng |
     }
   }
   for (const h of state.candidateHotels ?? []) {
-    const hotel = h as unknown as { name?: string };
+    const hotel = h as unknown as { name?: string; geoLocation?: { lat: number; lon: number } };
     if (hotel.name && (hotel.name === name || hotel.name.includes(name) || name.includes(hotel.name))) {
+      if (hotel.geoLocation) return { lat: hotel.geoLocation.lat, lng: hotel.geoLocation.lon };
       return undefined;
     }
   }
@@ -103,8 +104,9 @@ export async function executePlanTransit(
   let start: LatLng | null = startFromState ?? null;
   let end: LatLng | null = endFromState ?? null;
 
-  if (!start) start = await amap.geocode(input.from);
-  if (!end) end = await amap.geocode(input.to);
+  const city = state.preferences?.preferredDestination;
+  if (!start) start = await amap.geocode(input.from, city);
+  if (!end) end = await amap.geocode(input.to, city);
 
   if (!start || !end) {
     const transit = haversineEstimate(input.from, input.to, start, end, mode);

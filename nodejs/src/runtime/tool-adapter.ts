@@ -41,14 +41,13 @@ function createAmapClient(): AmapClient {
   const key = settings.AMAP_API_KEY;
 
   return {
-    async geocode(name: string): Promise<LatLng | null> {
+    async geocode(name: string, city?: string): Promise<LatLng | null> {
       if (!key) return null;
       try {
         const qs = new URLSearchParams({
           key,
           keywords: name,
-          city: "北京",
-          types: "风景名胜|公园广场|博物馆|主题乐园|寺庙道观|购物中心|商业街",
+          city: city || "北京",
           offset: "1",
         });
         const resp = await fetch(`https://restapi.amap.com/v5/place/text?${qs}`, {
