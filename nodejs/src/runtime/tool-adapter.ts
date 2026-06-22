@@ -161,17 +161,6 @@ export function createAgentLoopToolExecutor(
     async execute(call: ToolCall, state: AgentState): Promise<ToolResultLike> {
       log?.info({ tool: call.name }, "executing tool");
 
-      const tool = tools.get(call.name);
-      if (tool) {
-        try {
-          const result = await tool.execute(call.input as Record<string, unknown>);
-          return toToolResultLike(call.name, result);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { toolName: call.name, success: false, error: msg };
-        }
-      }
-
       if (call.name === "plan_transit") {
         try {
           return await executePlanTransit(call.input as any, state, amapClient);
@@ -184,6 +173,17 @@ export function createAgentLoopToolExecutor(
       if (call.name === "finalize_plan") {
         try {
           return await executeFinalizePlan(call.input as any, state);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { toolName: call.name, success: false, error: msg };
+        }
+      }
+
+      const tool = tools.get(call.name);
+      if (tool) {
+        try {
+          const result = await tool.execute(call.input as Record<string, unknown>);
+          return toToolResultLike(call.name, result);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           return { toolName: call.name, success: false, error: msg };
