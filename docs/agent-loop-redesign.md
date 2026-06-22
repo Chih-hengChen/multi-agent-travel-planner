@@ -854,5 +854,8 @@ P0-A 已于 2026-06-18 完成(`feat/p0-a-agent-loop` 分支,9步,216 测试通�
 | `docs/p1-a-contracts.md` | P1-A 接口契约(jsonrepair + 三层防御 + LLM 自修复 maxRetries=3) |
 | `docs/p1-b-contracts.md` | P1-B 接口契约(RAG 优化交付物 + 指标目标 + 实验流程) |
 | `docs/p1-c-contracts.md` | P1-C 接口契约(时间线交通 + 餐厅多样性 + 信息源融合) |
+| `docs/p2-a-contracts.md` | P2-A 接口契约(trace-viewer 三栏 HTML + jsonl 聚合 + mock fixtures) |
+| `docs/p2-b-contracts.md` | P2-B 接口契约(/api/feedback 端点 + LLM 自评 + prompt-versions 工作流) |
+| `docs/p2-c-contracts.md` | P2-C 接口契约(降级链可视化 + fallback-report 月度报表) |
 | `src/ARCHITECTURE.md` | 当前架构(实施过程中持续更新) |
 | `progress.md` | 高阶进度交接 |
