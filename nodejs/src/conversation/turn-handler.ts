@@ -13,6 +13,7 @@ import { GatheringAgent } from "../agents/gathering-agent.js";
 import { IntentRouter } from "../intent-router/index.js";
 import type { RouteDecision } from "../intent-router/types.js";
 import { sessionLogger } from "../logging/session-logger.js";
+import { TravelPlanningPipeline } from "../orchestrator/pipeline.js";
 import { SourceResolver } from "../data-sources/source-resolver.js";
 import { createAgentLoopToolExecutor, getAgentLoopToolDefs } from "../runtime/tool-adapter.js";
 import { AmadeusSource } from "../data-sources/amadeus-source.js";
@@ -21,7 +22,7 @@ import { AmapSource } from "../data-sources/amap-source.js";
 import { WebSearchSource } from "../data-sources/web-search-source.js";
 import { Train12306Source } from "../data-sources/train12306-source.js";
 import { settings } from "../config/settings.js";
-import type { PlanSummary, Flight, Train, Hotel, ProgressCallback } from "../types/index.js";
+import { TravelStyle, type PlanSummary, type Flight, type Train, type Hotel, type ProgressCallback } from "../types/index.js";
 import type { Message } from "../api/llm-client.js";
 import { withSessionId } from "../logging/session-context.js";
 import { createInitialAgentState, applyUserSelection, maybeAdvancePhase } from "../runtime/state.js";
@@ -51,6 +52,7 @@ export class TurnHandler {
   private readonly infoExtractor: InfoExtractor;
   private readonly gatheringAgent: GatheringAgent;
   private readonly intentRouter: IntentRouter;
+  private readonly pipeline: TravelPlanningPipeline | null;
   private readonly log: Logger;
 
   constructor(
@@ -58,10 +60,12 @@ export class TurnHandler {
     gatheringAgent: GatheringAgent,
     intentRouter?: IntentRouter,
     log?: Logger,
+    pipeline?: TravelPlanningPipeline,
   ) {
     this.infoExtractor = infoExtractor;
     this.gatheringAgent = gatheringAgent;
     this.intentRouter = intentRouter ?? new IntentRouter();
+    this.pipeline = pipeline ?? null;
     this.log = log ?? pino({ level: settings.LOG_LEVEL });
   }
 
@@ -423,16 +427,26 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
   const base = createInitialAgentState();
   if (ctx.destination) {
     base.preferences = {
-      destination: ctx.destination,
       preferredDestination: ctx.destination,
       departureCity: ctx.departureCity ?? "未知",
       startDate: ctx.startDate ?? "",
       endDate: ctx.endDate ?? "",
       numTravelers: ctx.numTravelers ?? 1,
       budget: ctx.budget ?? 0,
-      accommodationStyle: (ctx.accommodationStyle as any) ?? "comfort",
-      travelInterests: ctx.travelInterests ?? [],
-      transportPreference: (ctx.outboundTransportPreference as any) ?? "no_preference",
+      travelStyle: (ctx.accommodationStyle as any) === "budget" ? TravelStyle.BUDGET : TravelStyle.COMFORT,
+      departureTime: "flexible" as const,
+      dietaryRestrictions: [] as string[],
+      accessibilityNeeds: [] as string[],
+      notes: "",
+      interests: ctx.travelInterests ?? [],
+      outboundTransportPreference: (ctx.outboundTransportPreference as any) ?? "no_preference",
+      returnTransportPreference: (ctx.returnTransportPreference as any) ?? "no_preference",
+      mustVisitAttractions: [] as string[],
+      budgetStrictness: "strict" as const,
+      accommodationType: "any" as const,
+      localTransitMode: "mixed" as const,
+      diningPreference: "local_specialties" as const,
+      preferredHotelBrands: [] as string[],
     };
     base.phase = "searching";
   }
@@ -740,9 +754,31 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
 
     const introText = `好的，正在为您规划${ctx.destination ?? ""}的完整行程，请稍候...`;
 
-    return withSessionId(ctx.sessionId, async () => {
-      const msg = "Pipeline deprecated. Set USE_AGENT_LOOP=true to use Agent Loop with finalize_plan.";
+    if (!this.pipeline) {
+      const msg = "Pipeline not available. Set USE_AGENT_LOOP=true to use Agent Loop.";
       this.log.warn({ sessionId: ctx.sessionId }, msg);
+      return { newState: ConversationState.ERROR_RECOVERABLE, replyText: introText, error: msg };
+    }
+
+    return withSessionId(ctx.sessionId, async () => {
+    try {
+      const prefs = toUserPreferences(ctx);
+      const state = await this.pipeline!.run(prefs, onProgress);
+      const { buildPlanSummary } = await import("./context.js");
+      const planResult = buildPlanSummary(state);
+
+      ctx.planSummary = planResult;
+      ctx.state = ConversationState.COMPLETED;
+      ctx.updatedAt = Date.now();
+
+      return {
+        newState: ConversationState.COMPLETED,
+        replyText: introText,
+        planResult,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log.error({ err: msg, sessionId: ctx.sessionId }, "Pipeline failed");
 
       ctx.state = ConversationState.ERROR_RECOVERABLE;
       ctx.lastError = {
@@ -755,9 +791,10 @@ function buildSeedAgentState(ctx: ConversationContext): import("../runtime/state
 
       return {
         newState: ConversationState.ERROR_RECOVERABLE,
-        replyText: introText,
+        replyText: `行程规划失败：${msg}`,
         error: msg,
       };
+    }
     });
   }
 
