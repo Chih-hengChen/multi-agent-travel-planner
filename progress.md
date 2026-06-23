@@ -9,6 +9,12 @@
 - **工具修复**: plan_transit/finalize_plan 注册到 toolDefs、特化 executor 优先级、geocode 移除改用 POI 坐标+haversine
 - **前端**: 交通卡片不被酒店覆盖、agent loop 成功后 planResult 正确发射 SSE
 
+### P2-C 降级链报表 + 文档同步 (2026-06-23)
+- **doc**: agent-loop-redesign.md 头部状态更新(P0-A/B/C + P1 + P2 全部标记完成)
+- **feat(scripts)**: fallback-report.ts 升级为 P2-C 契约完整实现——月度过滤、status 分类(healthy/acceptable/watch/degraded)、详细告警、12 单测
+- **doc**: p2-c-contracts.md Step 1+2 标记完成
+- 22 个真实 session 的 fallback 报表成功生成,发现 plan_transit 降级率 75.4%
+
 ### P2 Agent Loop 可观测性 + 数据飞轮 (2026-06-22)
 - `9557b4e` docs: P2-A/B/C contracts 文档（~1500 行）
 - `c021526` feat(p2-a): trace-viewer 三栏 HTML 渲染器 + 4 mock fixtures + 26 测试

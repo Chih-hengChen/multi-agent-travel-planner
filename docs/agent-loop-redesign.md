@@ -3,7 +3,8 @@
 > v1 立项:2026-06-16
 > v2 修订:2026-06-16,接受 review
 > P0-A 落地:2026-06-18 (`feat/p0-a-agent-loop` 分支,9步全部完成)
-> 状态:P0-A 已完成,待开 P0-B/P0-C
+> 状态:P0-A/B/C + P1-A/B/C + P2-A/B/C 已完成,关联 P2-A/B 检查清单见 §8
+> P2-C §1-§4 fallback 可视化已在 P2-A trace-viewer 落地,§5 `fallback-report.ts` 于 2026-06-23 补完
 > 决策日志:
 > - Q1=A(代码控制 Loop) / Q2=单 Loop / Q3=两级模型 / Q4=B+C / Q5=先扩 eval set
 > - ReAct 落地 = `<thought>` 标签(方案 A)
@@ -744,7 +745,7 @@ trace-viewer 显示 `fallback_level`,复盘时一眼看出"今天 30% 的 search
 - `optimization-log.md` 流程
 - `prompt-versions/` 版本管理
 
-**P2-C:降级路径细化**(2-3 天)— `TOOL_FALLBACK_CHAIN` + trace `fallback_level`
+**P2-C:降级路径细化**(2-3 天,2026-06-23 完成)— `TOOL_FALLBACK_CHAIN` + trace `fallback_level` + `fallback-report.ts` 月度报表
 
 ### 最后 — 简历 md
 

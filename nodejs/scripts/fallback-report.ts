@@ -1,116 +1,256 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import type { TraceEvent } from "../src/runtime/trace.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, "..");
-const TRACE_DIR = path.join(PROJECT_ROOT, "data", "trace");
-const OUTPUT_DIR = path.join(PROJECT_ROOT, "data", "feedback");
-
-interface ToolExecEvent {
-  type: "tool_exec";
+interface ToolFallbackStats {
   tool: string;
-  fallbackLevel: number;
-  durationMs: number;
-  resultSummary: unknown;
+  totalCalls: number;
+  fallbackCount: number;
+  byLevel: Record<number, number>;
+  fallbackRate: number;
+  status: "healthy" | "acceptable" | "watch" | "degraded";
 }
 
-interface ToolStats {
-  total: number;
-  fallbacks: number;
-  levels: Record<number, number>;
+interface CliArgs {
+  month: string;
+  traceDir: string;
+  outDir: string;
 }
 
-function isToolExec(line: Record<string, unknown>): line is ToolExecEvent {
-  return line.type === "tool_exec" && typeof line.tool === "string";
+const ALERT_THRESHOLD = 0.30;
+const WATCH_THRESHOLD = 0.20;
+
+export function classifyStatus(rate: number): ToolFallbackStats["status"] {
+  if (rate === 0) return "healthy";
+  if (rate < WATCH_THRESHOLD) return "acceptable";
+  if (rate < ALERT_THRESHOLD) return "watch";
+  return "degraded";
 }
 
-function loadToolExecs(): Map<string, ToolStats> {
-  if (!fs.existsSync(TRACE_DIR)) return new Map();
-  const stats = new Map<string, ToolStats>();
-  const files = fs.readdirSync(TRACE_DIR).filter(f => f.endsWith(".jsonl"));
+function parseArgs(argv: string[]): CliArgs {
+  let month = "";
+  let traceDir = "data/trace";
+  let outDir = "data/feedback";
 
-  for (const file of files) {
-    const content = fs.readFileSync(path.join(TRACE_DIR, file), "utf-8");
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const ev = JSON.parse(line);
-        if (!isToolExec(ev)) continue;
-        if (!stats.has(ev.tool)) {
-          stats.set(ev.tool, { total: 0, fallbacks: 0, levels: {} });
-        }
-        const s = stats.get(ev.tool)!;
-        s.total++;
-        if (ev.fallbackLevel > 0) {
-          s.fallbacks++;
-          s.levels[ev.fallbackLevel] = (s.levels[ev.fallbackLevel] ?? 0) + 1;
-        }
-      } catch { /* skip malformed lines */ }
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--month") month = argv[++i];
+    else if (a === "--trace-dir") traceDir = argv[++i];
+    else if (a === "--out-dir") outDir = argv[++i];
+    else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
+    else throw new Error(`Unknown arg: ${a}`);
+  }
+
+  if (!month) month = "current";
+  return { month, traceDir, outDir };
+}
+
+function printHelp(): void {
+  console.log(`fallback-report — monthly tool fallback report
+
+Usage:
+  npx tsx scripts/fallback-report.ts --month current
+  npx tsx scripts/fallback-report.ts --month 2026-06
+  npx tsx scripts/fallback-report.ts --trace-dir data/trace --out-dir data/feedback
+
+Options:
+  --month <YYYY-MM | current>  target month (default: current)
+  --trace-dir <d>              trace directory (default: data/trace)
+  --out-dir <d>                output directory (default: data/feedback)
+  -h, --help                   show this help`);
+}
+
+function parseMonthFilter(month: string): string {
+  if (month === "current") {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error(`Invalid month: "${month}". Expected YYYY-MM or "current".`);
+  }
+  return month;
+}
+
+export function listTraceFiles(traceDir: string): string[] {
+  try {
+    return readdirSync(traceDir).filter((f) => f.endsWith(".jsonl"));
+  } catch {
+    return [];
+  }
+}
+
+export function readTraceJsonl(filePath: string): TraceEvent[] {
+  const raw = readFileSync(filePath, "utf8");
+  const events: TraceEvent[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && parsed.type && parsed.ts) {
+        events.push(parsed as TraceEvent);
+      }
+    } catch {
+      // skip malformed
     }
   }
-  return stats;
+  return events;
 }
 
-function generateReport(stats: Map<string, ToolStats>, month: string): string {
-  const entries = [...stats.entries()].sort((a, b) => b[1].fallbacks - a[1].fallbacks);
-  const totalCalls = entries.reduce((sum, [, s]) => sum + s.total, 0);
-  const totalFallbacks = entries.reduce((sum, [, s]) => sum + s.fallbacks, 0);
-  const overallRate = totalCalls > 0 ? ((totalFallbacks / totalCalls) * 100).toFixed(1) : "0.0";
+export function renderMarkdown(
+  monthFilter: string,
+  statsByTool: Map<string, ToolFallbackStats>,
+  globalTotal: number,
+  globalFallback: number,
+  sessionCount: number,
+  alerts: string[],
+): string {
+  const rows = Array.from(statsByTool.values()).sort((a, b) => b.fallbackRate - a.fallbackRate);
+  const globalRate = globalTotal > 0 ? (globalFallback / globalTotal) * 100 : 0;
+  const degradedCount = rows.filter((r) => r.status === "degraded").length;
+  const watchCount = rows.filter((r) => r.status === "watch").length;
 
-  let md = `# 降级链监控报告 - ${month}\n\n`;
-  md += `生成时间：${new Date().toISOString().slice(0, 10)}\n`;
-  md += `扫描文件数：${fs.existsSync(TRACE_DIR) ? fs.readdirSync(TRACE_DIR).filter(f => f.endsWith(".jsonl")).length : 0}\n\n`;
+  let md = `# Fallback Report — ${monthFilter}
 
-  md += `## 全局指标\n\n`;
-  md += `| 指标 | 值 |\n|---|---|\n`;
-  md += `| 总调用次数 | ${totalCalls} |\n`;
-  md += `| 降级次数 | ${totalFallbacks} |\n`;
-  md += `| 整体降级率 | ${overallRate}% |\n\n`;
+> 自动生成:${new Date().toISOString()}
+> 扫描范围:${sessionCount} 个 session,${globalTotal} 次 tool_exec
 
-  md += `## 按工具统计\n\n`;
-  md += `| 工具 | 调用次数 | 降级次数 | 降级率 | L1/L2 |\n`;
-  md += `|------|---------|---------|--------|-------|\n`;
+## 按工具聚合
 
-  for (const [tool, s] of entries) {
-    const rate = s.total > 0 ? ((s.fallbacks / s.total) * 100) : 0;
-    const alert = rate >= 30 ? " 🔴" : rate >= 15 ? " 🟡" : "";
-    const levelBreakdown = [1, 2].map(l => s.levels[l] ?? 0).join("/");
-    md += `| \`${tool}\` | ${s.total} | ${s.fallbacks} | ${rate.toFixed(1)}%${alert} | ${levelBreakdown} |\n`;
+| Tool | Total Calls | Fallback Count | Fallback Rate | By Level | Status |
+|------|-------------|----------------|---------------|----------|--------|
+`;
+
+  for (const s of rows) {
+    const byLevelStr = Object.entries(s.byLevel)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([l, n]) => `L${l}:${n}`)
+      .join(" ");
+    const statusIcon = s.status === "degraded" ? "⚠ **degraded**"
+      : s.status === "watch" ? "⚠ watch"
+      : s.status === "acceptable" ? "✅ acceptable"
+      : "✅ healthy";
+    const rateStr = s.fallbackRate > 0.5 ? `**${(s.fallbackRate * 100).toFixed(1)}%**` : `${(s.fallbackRate * 100).toFixed(1)}%`;
+    md += `| ${s.tool} | ${s.totalCalls} | ${s.fallbackCount} | ${rateStr} | ${byLevelStr} | ${statusIcon} |\n`;
   }
 
-  const highAlert = entries.filter(([, s]) => s.total > 0 && (s.fallbacks / s.total) >= 0.3);
-  if (highAlert.length > 0) {
-    md += `\n## 告警\n\n`;
-    for (const [tool, s] of highAlert) {
-      const rate = ((s.fallbacks / s.total) * 100).toFixed(1);
-      md += `- **${tool}** 降级率 ${rate}%（${s.fallbacks}/${s.total}），超过 30% 告警阈值\n`;
+  md += `\n## 全局统计\n\n`;
+  md += `- 扫描 session 数:${sessionCount}\n`;
+  md += `- 总 tool_exec:${globalTotal}\n`;
+  md += `- 总 fallback:${globalFallback}(L1+:${rows.reduce((a, r) => a + (r.byLevel[1] ?? 0), 0)} / L2+:${rows.reduce((a, r) => a + (r.byLevel[2] ?? 0), 0)})\n`;
+  md += `- 全局 fallback rate:${globalRate.toFixed(1)}%`;
+  md += globalRate > 10 ? "(⚠ 超过 10% 阈值)\n" : "(健康)\n";
+  md += `- 主源不稳定工具数:${degradedCount + watchCount}\n\n`;
+
+  if (alerts.length > 0) {
+    md += `## 告警\n\n`;
+    for (const alert of alerts) {
+      md += alert + "\n\n";
     }
   }
 
   return md;
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const monthIdx = args.indexOf("--month");
-  const month = monthIdx >= 0 ? args[monthIdx + 1] : new Date().toISOString().slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month)) {
-    console.error("Usage: npx tsx scripts/fallback-report.ts --month 2026-06");
-    process.exit(1);
+export function generateAlerts(
+  monthFilter: string,
+  statsByTool: Map<string, ToolFallbackStats>,
+): string[] {
+  const alerts: string[] = [];
+
+  for (const s of statsByTool.values()) {
+    if (s.status === "degraded" || s.status === "watch") {
+      const level = s.fallbackRate > 0.5 ? "critical" : s.status === "degraded" ? "warn" : "watch";
+      const icon = level === "critical" ? "🔴" : level === "warn" ? "⚠" : "👀";
+      alerts.push(`### ${icon} ${s.tool} fallback rate ${(s.fallbackRate * 100).toFixed(1)}%(> ${s.status === "degraded" ? 30 : 20}% 阈值)
+
+**影响**:${s.tool} 数据源健康度下降,可能影响相关推荐质量
+
+**建议 action**:
+- 检查对应主源服务状态
+- 确认降级链是否正常工作(L0→L1→L2 逐级尝试)
+- 若持续高 fallback,触发服务升级`);
+    }
   }
 
-  const stats = loadToolExecs();
-  if (stats.size === 0) {
-    console.log("No trace data found");
+  return alerts;
+}
+
+export function aggregateTraceEvents(
+  files: string[],
+  traceDir: string,
+  monthFilter: string,
+): {
+  statsByTool: Map<string, ToolFallbackStats>;
+  globalTotal: number;
+  globalFallback: number;
+  sessionCount: number;
+  alerts: string[];
+} {
+  const statsByTool = new Map<string, ToolFallbackStats>();
+  let sessionCount = 0;
+  let globalTotal = 0;
+  let globalFallback = 0;
+
+  for (const f of files) {
+    const filePath = join(traceDir, f);
+    const events = readTraceJsonl(filePath);
+
+    const sessionMonth = events.length > 0 ? events[0].ts.slice(0, 7) : "";
+    if (sessionMonth !== monthFilter) continue;
+
+    sessionCount++;
+
+    for (const e of events) {
+      if (e.type !== "tool_exec") continue;
+      const tool = (e as any).tool as string;
+      const fallbackLevel = (e as any).fallbackLevel as number ?? 0;
+
+      let stats = statsByTool.get(tool);
+      if (!stats) {
+        stats = { tool, totalCalls: 0, fallbackCount: 0, byLevel: {}, fallbackRate: 0, status: "healthy" };
+        statsByTool.set(tool, stats);
+      }
+      stats.totalCalls++;
+      stats.byLevel[fallbackLevel] = (stats.byLevel[fallbackLevel] ?? 0) + 1;
+      if (fallbackLevel > 0) stats.fallbackCount++;
+      globalTotal++;
+      if (fallbackLevel > 0) globalFallback++;
+    }
+  }
+
+  for (const s of statsByTool.values()) {
+    s.fallbackRate = s.totalCalls > 0 ? s.fallbackCount / s.totalCalls : 0;
+    s.status = classifyStatus(s.fallbackRate);
+  }
+
+  const alerts = generateAlerts(monthFilter, statsByTool);
+  return { statsByTool, globalTotal, globalFallback, sessionCount, alerts };
+}
+
+async function main() {
+  const args = parseArgs(process.argv);
+  const monthFilter = parseMonthFilter(args.month);
+  const files = listTraceFiles(args.traceDir);
+
+  console.log(`[fallback-report] scanning ${files.length} trace file(s) for ${monthFilter}`);
+
+  const { statsByTool, globalTotal, globalFallback, sessionCount, alerts } =
+    aggregateTraceEvents(files, args.traceDir, monthFilter);
+
+  if (statsByTool.size === 0) {
+    console.log(`[fallback-report] no matching sessions found for ${monthFilter}`);
     return;
   }
 
-  const report = generateReport(stats, month);
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  const outPath = path.join(OUTPUT_DIR, `fallback-report-${month}.md`);
-  fs.writeFileSync(outPath, report, "utf-8");
-  console.log(`[OK] ${outPath} (${stats.size} tools, ${[...stats.values()].reduce((s, st) => s + st.total, 0)} calls)`);
+  const md = renderMarkdown(monthFilter, statsByTool, globalTotal, globalFallback, sessionCount, alerts);
+  const outPath = join(args.outDir, `fallback-report-${monthFilter}.md`);
+  mkdirSync(dirname(outPath), { recursive: true });
+  writeFileSync(outPath, md, "utf8");
+  console.log(`[OK] ${outPath}  (${sessionCount} sessions, ${globalTotal} tool_exec, ${globalFallback} fallbacks)`);
 }
 
-main();
+main().catch((err) => {
+  console.error("[fallback-report]", err.message);
+  process.exit(1);
+});

@@ -2,8 +2,8 @@
 
 > 关联:`docs/agent-loop-redesign.md` §4.7 / §5 P2-C / §8 验收标准 18
 > 立项:2026-06-22
-> 状态:**Hard contract** — P2-C 实现期不允许偏离,变更需更新本文档 + 重跑测试
-> 目的:锁定降级链的可视化与监控接口——大部分已在 P0-A 落地,本文档补齐 trace-viewer 展示 + 月度 fallback report
+> 状态:**已完成** — Step 1+2 于 2026-06-23 落地,Step 3/4 留 P3+
+> 目的:锁定降级链的可视化与监控接口——大部分已在 P0-A 落地,P2-C 补齐 trace-viewer fallback 展示 + `fallback-report.ts` 月度报表
 
 ---
 
@@ -478,9 +478,13 @@ async function main() {
 
 ---
 
-## 7. P2-C step plan(2-3 天,本会话不实现)
+## 7. P2-C step plan(2-3 天,2026-06-23 完成)
 
-### Step 1:trace-viewer fallback 折叠面板(0.5 天)
+### Step 1:trace-viewer fallback 折叠面板(0.5 天) ✅
+- 已在 P2-A trace-html-renderer.ts 实现: `toolByLevelStats` + `<details class="fallback-summary">`
+- 快照测试已有 `fallback-recovery` fixture 覆盖
+
+### Step 2:fallback-report.ts 脚本(1 天) ✅
 
 - 扩展 `scripts/trace-html-renderer.ts` 加 `renderFallbackSummary`
 - 扩展 `scripts/trace-aggregator.ts` 加 `byLevel` 统计(若 P2-A 未覆盖)
@@ -496,7 +500,7 @@ Commit: `feat(scripts): fallback distribution panel in trace-viewer`
 
 Commit: `feat(scripts): monthly fallback report with status classification`
 
-### Step 3:待补齐工具 fallback 验证(0.5-1 天)
+### Step 3:待补齐工具 fallback 验证(未做,数据源已有降级实现  )
 
 - 跑 mock trace 模拟 search_flights / search_trains / search_weather 各级降级
 - 对照 trace 输出的 `fallbackLevel` 与 `TOOL_FALLBACK_CHAIN` 索引
@@ -504,7 +508,7 @@ Commit: `feat(scripts): monthly fallback report with status classification`
 
 Commit: `fix(tools): normalize fallback level reporting for flights/trains/weather`
 
-### Step 4(可选):cron 配置 + Slack 通知
+### Step 4(可选):cron 配置 + Slack 通知(未做,P3+)
 
 - 加 `crontab` 条目示例到 `docs/deployment.md`
 - 可选 `--notify-slack <webhook>` flag 实现
