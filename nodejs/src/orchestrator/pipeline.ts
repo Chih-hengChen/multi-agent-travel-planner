@@ -258,11 +258,47 @@ export class TravelPlanningPipeline {
   }
 
   private isActivityMissing(state: TravelPlanState): boolean {
-    return (
-      !state.activityResult ||
-      !state.activityResult.dayPlans ||
-      state.activityResult.dayPlans.length === 0
-    );
+    if (!state.activityResult?.dayPlans?.length) return true;
+
+    const GENERIC_ACTIVITY_PATTERNS = [
+      /自由活动/, /自由安排/, /自由探索/, /自行游览/,
+      /当地餐厅/, /附近餐厅/, /周边美食/, /随意用餐/,
+      /自由时间/, /自行安排/, /休息时间/,
+    ];
+    const GENERIC_RESTAURANT_PATTERNS = [
+      /当地餐厅/, /附近餐厅/, /周边美食/, /随意用餐/, /随便吃/,
+      /自理/, /自选/,
+    ];
+
+    let realActivityCount = 0;
+    let realRestaurantCount = 0;
+    let totalActivities = 0;
+
+    for (const day of state.activityResult.dayPlans) {
+      for (const act of day.activities ?? []) {
+        totalActivities++;
+        const name = act.name ?? "";
+
+        if (!GENERIC_ACTIVITY_PATTERNS.some(p => p.test(name))) {
+          realActivityCount++;
+        }
+        if (!GENERIC_RESTAURANT_PATTERNS.some(p => p.test(name))) {
+          realRestaurantCount++;
+        }
+      }
+    }
+
+    if (totalActivities === 0) return true;
+    if (realActivityCount < totalActivities * 0.5) {
+      this.log.warn({ total: totalActivities, real: realActivityCount }, "LLM 输出中占位符活动过多，视为缺失");
+      return true;
+    }
+    if (realRestaurantCount === 0 && totalActivities > 0) {
+      this.log.warn("LLM 输出中没有真实餐厅，视为缺失");
+      return true;
+    }
+
+    return false;
   }
 
   private async refreshSelectedPrices(state: TravelPlanState): Promise<void> {
