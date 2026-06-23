@@ -121,6 +121,7 @@ export class AmapSource implements TravelDataSource {
         keywords,
         city: params.city,
         citylimit: "true",
+        types: "11",  // 110000 风景名胜，过滤掉公交站/地铁站等
         offset: String(Math.min(maxResults, 25)),
         page: "1",
         extensions: "all",

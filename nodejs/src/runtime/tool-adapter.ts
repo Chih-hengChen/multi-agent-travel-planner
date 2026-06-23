@@ -104,7 +104,7 @@ function buildTools(resolver: SourceResolver, log?: Logger): Map<string, Registe
   add(createSearchRestaurantsTool());
   add(createSearchXhsTool());
   add(createSearchWeatherTool());
-  add(createSearchTravelGuidesTool());
+  add(createSearchTravelGuidesTool({ logger: log }));
   add(createSelectTransportTool());
   add(createSelectHotelTool());
 

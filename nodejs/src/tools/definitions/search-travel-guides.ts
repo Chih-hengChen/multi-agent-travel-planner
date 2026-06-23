@@ -1,11 +1,12 @@
 import { RagSource } from "../../rag/rag-source.js";
-import type { RegisteredTool } from "../types.js";
+import type { RegisteredTool, ToolContext } from "../types.js";
+import type { Logger } from "pino";
 
-export function createSearchTravelGuidesTool(): RegisteredTool {
+export function createSearchTravelGuidesTool(context?: ToolContext): RegisteredTool {
   let ragSource: RagSource | null = null;
 
   async function getRagSource(): Promise<RagSource> {
-    if (!ragSource) ragSource = new RagSource();
+    if (!ragSource) ragSource = new RagSource(context?.logger);
     return ragSource;
   }
 
