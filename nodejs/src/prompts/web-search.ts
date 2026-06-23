@@ -61,6 +61,21 @@ G340 武汉 3时55分 北京西 二等座 623 一等座 997 商务座 1960
   {"trainNo":"G516","trainType":"高铁","departureCity":"武汉","arrivalCity":"北京西","departureTime":"13:30","arrivalTime":"17:50","price":616.5,"durationHours":4,"seatType":"二等座"}
 ]`,
   },
+  flights: {
+    input: `来源1: 北京到上海机票查询-特价机票-航班时刻表
+中国国航 CA1831 北京首都T3-上海虹桥T2 07:00-09:20 2小时20分 经济舱 ¥890
+东方航空 MU5102 北京首都T2-上海浦东T1 08:30-10:45 2小时15分 经济舱 ¥750
+来源2: 北京上海航班时刻表及票价查询2026
+MU5138 北京大兴-上海虹桥 10:00-12:05 经济舱 680元
+来源3: 北京到上海机票_北京到上海航班_携程
+航班HU7605 北京首都T1 13:30出发 上海虹桥 15:50到达 海南航空 票价820`,
+    output: `[
+  {"airline":"中国国航","flightNo":"CA1831","departureTime":"07:00","arrivalTime":"09:20","price":890,"durationHours":2.3},
+  {"airline":"东方航空","flightNo":"MU5102","departureTime":"08:30","arrivalTime":"10:45","price":750,"durationHours":2.3},
+  {"airline":"东方航空","flightNo":"MU5138","departureTime":"10:00","arrivalTime":"12:05","price":680,"durationHours":2.1},
+  {"airline":"海南航空","flightNo":"HU7605","departureTime":"13:30","arrivalTime":"15:50","price":820,"durationHours":2.3}
+]`,
+  },
 };
 
 export function buildSystemPrompt(params: { kind: string }): string {

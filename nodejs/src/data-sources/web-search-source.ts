@@ -30,8 +30,7 @@ export class WebSearchSource implements TravelDataSource {
   constructor(private readonly logger: Logger) {}
 
   async searchFlights(params: FlightSearchParams): Promise<Flight[]> {
-    const query = `${params.origin}到${params.destination}机票价格航班时刻表`;
-    return this.searchAndParse<Flight>(query, "flights", (raw) => {
+    const mapper = (raw: unknown) => {
       const d = raw as Record<string, unknown>;
       const flightNo = String(d.flightNo ?? d.flight_no ?? "");
       if (!flightNo) return null;
@@ -47,7 +46,27 @@ export class WebSearchSource implements TravelDataSource {
         stops: 0,
         cabinClass: "economy",
       };
-    });
+    };
+
+    const queries = [
+      `${params.origin}到${params.destination}机票价格航班时刻表`,
+      `${params.origin} ${params.destination} 特价机票 航班`,
+      `${params.origin}飞${params.destination} 航班`,
+    ];
+
+    for (const query of queries) {
+      const results = await this.searchAndParse<Flight>(query, "flights", mapper);
+      if (results.length > 0) return results;
+      this.logger.info({ query: query.substring(0, 50) }, "web-search: flight query retry");
+    }
+
+    this.logger.info({ origin: params.origin, destination: params.destination }, "web-search: all flight queries failed, using LLM knowledge");
+    return this.searchAndParse<Flight>(
+      `${params.origin}到${params.destination}航班`,
+      "flights",
+      mapper,
+      { allowLlmFallback: true },
+    );
   }
 
   async searchTrains(params: TrainSearchParams): Promise<Train[]> {
