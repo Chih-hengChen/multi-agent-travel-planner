@@ -24,8 +24,8 @@ const EXPECTED_PHASE_MATRIX: Record<ToolName, Phase[]> = {
   search_flights:        ["searching"],
   search_trains:         ["searching"],
   plan_transit:          ["planning"],
-  select_transport:      ["selecting"],
-  select_hotel:          ["selecting"],
+  select_transport:      [], // 红线:LLM 不得自主选择交通,仅前端 API 可触发
+  select_hotel:          [], // 红线:LLM 不得自主选择酒店,仅前端 API 可触发
   finalize_plan:         ["planning"],
 };
 
@@ -73,8 +73,8 @@ describe("listToolsForPhase", () => {
     ]);
   });
 
-  it("selecting exposes select_transport + select_hotel", () => {
-    expect(names("selecting").sort()).toEqual(["select_hotel", "select_transport"]);
+  it("selecting exposes no tools (LLM 不可选交通/酒店,前端 API 处理)", () => {
+    expect(names("selecting")).toEqual([]);
   });
 
   it("planning exposes 6 tools (search + transit + finalize)", () => {

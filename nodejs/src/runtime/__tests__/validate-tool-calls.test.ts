@@ -168,7 +168,7 @@ describe("validateToolCalls - DUPLICATE_CALL", () => {
 });
 
 describe("validateToolCalls - PRECONDITION_MISSING", () => {
-  it("select_transport: rejects when candidateTransports empty", () => {
+  it("select_transport: blocked at PHASE_NOT_ALLOWED (allowedPhases=[])", () => {
     const state = makeState({
       phase: "selecting",
       candidateTransports: [],
@@ -178,11 +178,10 @@ describe("validateToolCalls - PRECONDITION_MISSING", () => {
       state,
       emptySchemaLookup(),
     );
-    expect(result.rejected[0].code).toBe("PRECONDITION_MISSING");
-    expect(result.rejected[0].reason).toContain("candidateTransports");
+    expect(result.rejected[0].code).toBe("PHASE_NOT_ALLOWED");
   });
 
-  it("select_transport: passes when candidateTransports non-empty", () => {
+  it("select_transport: blocked at PHASE_NOT_ALLOWED even with data", () => {
     const state = makeState({
       phase: "selecting",
       candidateTransports: [{ id: "X" } as any],
@@ -192,7 +191,7 @@ describe("validateToolCalls - PRECONDITION_MISSING", () => {
       state,
       emptySchemaLookup(),
     );
-    expect(result.approved).toHaveLength(1);
+    expect(result.rejected[0].code).toBe("PHASE_NOT_ALLOWED");
   });
 
   it("finalize_plan: rejects when not all 3 selected", () => {

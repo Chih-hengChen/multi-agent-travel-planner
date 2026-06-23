@@ -31,16 +31,31 @@ function isLocalSpecialty(name: string, description: string, city: string): bool
   return keywords.some(k => haystack.includes(k));
 }
 
+function isTravelDay(dayIdx: number, state: AgentState): boolean {
+  const prefs = state.preferences;
+  if (!prefs?.startDate || !prefs?.endDate) return false;
+  const startMs = new Date(prefs.startDate).getTime();
+  const endMs = new Date(prefs.endDate).getTime();
+  const daysDiff = Math.max(1, Math.round((endMs - startMs) / 86_400_000));
+  return dayIdx === 0 || dayIdx === daysDiff;
+}
+
 function validatePlanQuality(plan: TravelPlan, state: AgentState): string[] {
   const errors: string[] = [];
   const city = state.preferences?.preferredDestination ?? "";
 
   for (const day of plan.dayPlans) {
+    if (day.morning && !day.morning.transitFromPrev) {
+      errors.push(`第 ${day.dayIdx + 1} 天缺酒店→早间交通(transitFromPrev)`);
+    }
     if (day.morning && day.afternoon && !day.morning.transitToNext) {
       errors.push(`第 ${day.dayIdx + 1} 天 morning→afternoon 缺 transitToNext`);
     }
     if (day.afternoon && day.evening && !day.afternoon.transitToNext) {
       errors.push(`第 ${day.dayIdx + 1} 天 afternoon→evening 缺 transitToNext`);
+    }
+    if (day.evening && !day.evening.transitToNext) {
+      errors.push(`第 ${day.dayIdx + 1} 天晚间缺→酒店交通(transitToNext)`);
     }
 
     const allActivities = [
@@ -54,6 +69,18 @@ function validatePlanQuality(plan: TravelPlan, state: AgentState): string[] {
       if (!a) continue;
       if (CHAIN_BRANDS.has(a.name)) {
         errors.push(`第 ${day.dayIdx + 1} 天出现连锁品牌"${a.name}"(除非用户显式要求)`);
+      }
+    }
+
+    if (isTravelDay(day.dayIdx, state)) {
+      for (const slot of [day.morning, day.afternoon, day.evening]) {
+        if (!slot) continue;
+        for (const a of slot.attractions) {
+          const isFullDay = a.visitGuide?.isFullDay === true || (a.estimatedDurationMin ?? 0) >= 360;
+          if (isFullDay && a.category === "attraction") {
+            errors.push(`第 ${day.dayIdx + 1} 天有航班/火车但安排了全天景点"${a.name}"`);
+          }
+        }
       }
     }
   }

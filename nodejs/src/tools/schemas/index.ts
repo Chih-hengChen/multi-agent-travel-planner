@@ -1,5 +1,5 @@
-export { ActivitySchema } from "./activity.js";
-export type { PlanActivity } from "./activity.js";
+export { ActivitySchema, VisitGuideSchema } from "./activity.js";
+export type { PlanActivity, VisitGuide } from "./activity.js";
 
 export { TransitSegmentSchema } from "./transit.js";
 export type { PlanTransitSegment } from "./transit.js";

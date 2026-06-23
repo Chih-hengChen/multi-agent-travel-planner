@@ -77,8 +77,8 @@ describe("createInitialAgentState", () => {
 });
 
 describe("computeTravelDays", () => {
-  it("4-night trip = 4 days", () => {
-    expect(computeTravelDays(makePrefs({ startDate: "2026-07-01", endDate: "2026-07-05" }))).toBe(4);
+  it("July 1-5 = 5 calendar days", () => {
+    expect(computeTravelDays(makePrefs({ startDate: "2026-07-01", endDate: "2026-07-05" }))).toBe(5);
   });
 
   it("same-day trip = 1 day (min)", () => {
@@ -184,6 +184,7 @@ describe("maybeAdvancePhase", () => {
       preferences: makePrefs({ startDate: "2026-07-01", endDate: "2026-07-02" }),
       dayPlans: [
         { dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any,
+        { dayIdx: 1, date: "2026-07-02", dining: [], transitTips: [] } as any,
       ],
       budgetBreakdown: { totalCost: 100, byCategory: { transport: 0, accommodation: 0, food: 0, attractions: 0, other: 0 }, budgetLimit: 15000, isWithinBudget: true, variance: 0 },
     });
@@ -194,7 +195,10 @@ describe("maybeAdvancePhase", () => {
     const s = makeState({
       phase: "planning",
       preferences: makePrefs({ startDate: "2026-07-01", endDate: "2026-07-02" }),
-      dayPlans: [{ dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any],
+      dayPlans: [
+        { dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any,
+        { dayIdx: 1, date: "2026-07-02", dining: [], transitTips: [] } as any,
+      ],
       budgetBreakdown: { totalCost: 100, byCategory: { transport: 0, accommodation: 0, food: 0, attractions: 0, other: 0 }, budgetLimit: 15000, isWithinBudget: true, variance: 0 },
       lastThought: "还需要继续细化行程",
     });
@@ -217,7 +221,10 @@ describe("maybeAdvancePhase", () => {
       phase: "planning",
       budgetRound: MAX_BUDGET_ROUNDS,
       preferences: makePrefs({ startDate: "2026-07-01", endDate: "2026-07-02" }),
-      dayPlans: [{ dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any],
+      dayPlans: [
+        { dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any,
+        { dayIdx: 1, date: "2026-07-02", dining: [], transitTips: [] } as any,
+      ],
       budgetBreakdown: { totalCost: 20000, byCategory: { transport: 0, accommodation: 0, food: 0, attractions: 0, other: 0 }, budgetLimit: 15000, isWithinBudget: false, variance: 5000 },
     });
     expect(maybeAdvancePhase(s).phase).toBe("completed");
@@ -245,6 +252,7 @@ describe("canFinish", () => {
     dayPlans: [
       { dayIdx: 0, date: "2026-07-01", dining: [], transitTips: [] } as any,
       { dayIdx: 1, date: "2026-07-02", dining: [], transitTips: [] } as any,
+      { dayIdx: 2, date: "2026-07-03", dining: [], transitTips: [] } as any,
     ],
     budgetBreakdown: { totalCost: 100, byCategory: { transport: 0, accommodation: 0, food: 0, attractions: 0, other: 0 }, budgetLimit: 15000, isWithinBudget: true, variance: 0 },
   };
@@ -352,7 +360,7 @@ describe("getMissingRequirements", () => {
       dayPlans: [{ dayIdx: 0, date: "x", dining: [], transitTips: [] } as any],
     });
     const missing = getMissingRequirements(s);
-    expect(missing.some(m => m.startsWith("dayPlans (need 4, have 1)"))).toBe(true);
+    expect(missing.some(m => m.startsWith("dayPlans (need 5, have 1)"))).toBe(true);
     expect(missing).toContain("budgetBreakdown");
   });
 

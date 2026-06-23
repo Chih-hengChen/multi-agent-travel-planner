@@ -85,7 +85,7 @@ const PHASE_PROMPTS: Record<Phase, string> = {
         {"meal":"lunch","restaurant":{"name":"四季民福烤鸭店(前门店)","category":"restaurant","location":{"lat":39.896,"lng":116.398,"address":"前门大栅栏街18号"},"estimatedDurationMin":60,"estimatedCost":60,"description":"正宗北京烤鸭,皮脆肉嫩配甜面酱薄饼","source":"amap","rerankScore":0.9},"isLocalSpecialty":true},
         {"meal":"dinner","restaurant":{"name":"门框胡同百年卤煮","category":"restaurant","location":{"lat":39.896,"lng":116.398,"address":"前门大街门框胡同"},"estimatedDurationMin":60,"estimatedCost":40,"description":"老北京卤煮火烧,地道胡同小吃","source":"xhs","rerankScore":0.8},"isLocalSpecialty":true}
       ],
-      "transitTips": ["机场快轨转2号线到前门站"]
+      "transitTips": ["酒店→天安门步行5分钟"]
     }
   ],
   "budgetBreakdown": {
@@ -101,19 +101,47 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 
 【格式要点】
 - dayIdx 从 0 开始; dining 数组必须是 3 项(早/午/晚)
-- 景点/餐厅都必须包装在 Activity 对象中: name, category("attraction"|"restaurant"), location{lat,lng,address}, estimatedDurationMin, estimatedCost, description(≥20字), source("amap"|"xhs"|"rag"|"baike"|"llm_generated"), rerankScore(0-1)
-- transitToNext 必须含: from, to, mode("transit"|"walking"|"driving"), durationMin, distanceKm, cost("¥30"), costAmount(30), steps[], fallbackLevel(0|1|2)
-- dining 每项: meal("breakfast"|"lunch"|"dinner"), restaurant(Activity|可选), isLocalSpecialty(bool), alternatives(可选)
+- 景点/餐厅都必须包装在 Activity 对象中并包含 visitGuide(推荐入口/路线/必看/贴士/isFullDay)
+- transitFromPrev:到达本 slot 的交通(酒店→早间景点或上一 slot→本 slot)
+- transitToNext:离开本 slot 的交通(本 slot→下一 slot 或晚间→酒店)
+- dining 每项: meal("breakfast"|"lunch"|"dinner"), restaurant(Activity|可选), isLocalSpecialty(bool)
 - budgetBreakdown.totalCost 必须等于 byCategory 各项之和
 - 整个 rawJson 必须是一次 JSON.parse 就能解析的合法 JSON,不要用 markdown 代码块包裹
-- 每个 dayPlan 的 morning/afternoon/evening 至少一个有 attractions; 没有活动的 slot 直接省略不要输出
+
+【景点时长规则】
+- 大型主题乐园/5A 景区(环球影城/迪士尼/长城等):标记 isFullDay=true,建议游览 6-8h
+- 中型景点(天坛/颐和园/大型博物馆等):2-4h
+- 小型景点/打卡点:1-2h
+- 全天景点(isFullDay=true)不能与航班/火车安排在同一天
+- 全天景点不能与其他景点安排在同一天(晚餐/夜景除外)
+
+【景点攻略查询】
+对每个计划安排的景点,调用 search_xhs 搜索其游览攻略:
+- 关键词格式:"{景点名} 攻略 门票 路线 建议"
+- 如搜故宫:"故宫 游览攻略 哪个门进 游玩顺序 必看 讲解器"
+- 从 XHS 笔记中提取:推荐入口(哪个门)、游览顺序、必看项目、实用贴士
+- 将提取的信息填入该景点的 description(≥30字)和 visitGuide 字段
+
+【交通衔接要求】
+每一天的交通必须覆盖完整链条:
+1. hotel→早间第一个景点 → 填入 morning.transitFromPrev
+2. 早间→午间 → 填入 morning.transitToNext
+3. 午间→晚间 → 填入 afternoon.transitToNext
+4. 晚间→酒店 → 填入 evening.transitToNext(to 设为酒店名)
+每段都用 plan_transit 获取真实数据,不要估算
+
+【每日时间预算】
+- 可用游览时间:08:00~21:00(约 13h)
+- 早间(08:00-12:00):约 4h / 午间(12:00-17:00):约 5h(含午餐) / 晚间(17:00-21:00):约 4h(含晚餐)
+- 一天总活动时间(含交通)不得超过 14h
+- 如果当天有航班/火车,只安排半日活动(≤6h)
 
 【生成步骤】
-1. 用 search_attractions/search_restaurants 收集数据
-2. 用 plan_transit 获取每段交通耗时和路径
-3. 编排行程确保地理合理(同区域景点放同一天)
+1. 用 search_attractions 收集景点数据,用 search_xhs 搜索每个景点的攻略
+2. 用 plan_transit 获取每段交通(酒店→早间→午间→晚间→酒店全链)
+3. 编排行程:全天景点独占一天,航班日只排半日,同区域景点放同一天
 4. 检查本地特色占比≤60%、无连锁品牌
-5. 一次性调用 finalize_plan 输出`,
+5. 调用 finalize_plan 前执行检查清单:visitGuide 填充√全天景点独占√航班日半日√交通链完整√日总时间≤14h√`,
 
   completed:  `【当前阶段:completed】
 行程已交付,等待用户反馈或新指令。`,

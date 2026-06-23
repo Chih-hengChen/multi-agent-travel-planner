@@ -104,8 +104,20 @@ export async function executePlanTransit(
 ): Promise<ToolResultLike> {
   const mode = input.mode ?? "transit";
 
-  const start: LatLng | null = findCoordsByName(input.from, state) ?? null;
-  const end: LatLng | null = findCoordsByName(input.to, state) ?? null;
+  // Tier 1: in-memory fuzzy match
+  let start: LatLng | null = findCoordsByName(input.from, state) ?? null;
+  let end: LatLng | null = findCoordsByName(input.to, state) ?? null;
+
+  // Tier 2: Amap geocode fallback for missing coordinates
+  if (!start || !end) {
+    const city = state.preferences?.preferredDestination;
+    const [geoStart, geoEnd] = await Promise.all([
+      start ? Promise.resolve(start) : safeGeocode(amap, input.from, city),
+      end ? Promise.resolve(end) : safeGeocode(amap, input.to, city),
+    ]);
+    start = geoStart;
+    end = geoEnd;
+  }
 
   if (!start || !end) {
     const transit = haversineEstimate(input.from, input.to, start, end, mode);
@@ -153,6 +165,14 @@ export async function executePlanTransit(
     data: { dayIdx: input.dayIdx, transit } satisfies PlanTransitResult,
     fallbackLevel: 0,
   };
+}
+
+async function safeGeocode(amap: AmapClient, name: string, city?: string): Promise<LatLng | null> {
+  try {
+    return await amap.geocode(name, city);
+  } catch {
+    return null;
+  }
 }
 
 function parseCost(cost: string | null): number {
