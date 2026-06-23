@@ -9,6 +9,13 @@
 - **工具修复**: plan_transit/finalize_plan 注册到 toolDefs、特化 executor 优先级、geocode 移除改用 POI 坐标+haversine
 - **前端**: 交通卡片不被酒店覆盖、agent loop 成功后 planResult 正确发射 SSE
 
+### 行程质量优化 + 测试修复 (2026-06-23) `c08ede9`
+- **Phase 1**: plan_transit 新增 Amap geocode 降级(fallbackLevel=2→0/1)
+- **Phase 2**: Schema 扩展——VisitGuideSchema(入口/路线/必看/isFullDay)+ transitFromPrev
+- **Phase 3**: planning prompt 增强——全天景点规则/XHS 攻略查询/交通链要求/时间预算/检查清单
+- **Phase 4**: finalize_plan 校验增强——transitFromPrev/晚间→酒店交通/全天景点冲突检测
+- **测试修复**: 修 13 个预先存在的测试失败(policy/validate-tool-calls/state/plan-schema)
+
 ### P2-C 降级链报表 + 文档同步 (2026-06-23)
 - **doc**: agent-loop-redesign.md 头部状态更新(P0-A/B/C + P1 + P2 全部标记完成)
 - **feat(scripts)**: fallback-report.ts 升级为 P2-C 契约完整实现——月度过滤、status 分类(healthy/acceptable/watch/degraded)、详细告警、12 单测
