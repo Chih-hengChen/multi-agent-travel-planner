@@ -80,3 +80,5 @@ ai-tutor
 **/.claude/
 *.xlsx
 nodejs/data/vectors/
+
+python-scripts/

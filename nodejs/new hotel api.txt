@@ -1,0 +1,596 @@
+API Reference
+Metadata Endpoints
+Exchange Rates
+GET /v1/metadata/exchange-rates
+
+Get currency exchange rates.
+
+Parameter	Type	Required	Description
+locale	Locale	Yes	Language locale (e.g., en-gb)
+currency	Currency	Yes	Target currency code (e.g., USD)
+Hotels Endpoints (v1)
+Search Locations
+GET /v1/hotels/locations
+
+Search locations or hotels by name. Returns destination IDs needed for hotel searches.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+name	string	Yes	Location or hotel name	Berlin
+Response Example:
+
+[
+  {
+    "name": "London",
+    "dest_type": "city",
+    "dest_id": "-2601889",
+    "country": "United Kingdom",
+    "label": "London, Greater London, United Kingdom",
+    "latitude": 51.507391,
+    "longitude": -0.127634,
+    "nr_hotels": 14510
+  }
+]
+Search Hotels
+GET /v1/hotels/search
+
+Get available hotels by destination, dates, and guest count. Use page_number for pagination.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+dest_type	DestType	Yes	Destination type	city
+dest_id	integer	Yes	Destination ID from Search Locations	-553173
+checkin_date	string	Yes	Check-in date (YYYY-MM-DD)	2027-01-11
+checkout_date	string	Yes	Check-out date (YYYY-MM-DD)	2027-01-12
+room_number	integer	Yes	Number of rooms	1
+adults_number	integer	Yes	Number of adults	2
+filter_by_currency	Currency	Yes	Currency for prices	USD
+order_by	HotelsSearchOrderBy	Yes	Sort order	popularity
+units	HotelsSearchUnits	Yes	Unit system	metric
+children_number	integer	No	Number of children	2
+children_ages	string	No	Ages of children (comma-separated, 0=infant)	5,0
+page_number	integer	No	Page number for pagination	0
+categories_filter_ids	string	No	Filter IDs (use Search Filters endpoint)	class::2,class::4
+include_adjacency	boolean	No	Include nearby locations	true
+Search Filters
+GET /v1/hotels/search-filters
+
+Get available filters for hotel search (star rating, amenities, price ranges, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+dest_type	DestType	Yes	Destination type	city
+dest_id	integer	Yes	Destination ID	-553173
+checkin_date	string	Yes	Check-in date	2027-01-11
+checkout_date	string	Yes	Check-out date	2027-01-12
+room_number	integer	Yes	Number of rooms	1
+adults_number	integer	Yes	Number of adults	2
+filter_by_currency	Currency	Yes	Currency	USD
+order_by	HotelsSearchOrderBy	Yes	Sort order	popularity
+units	HotelsSearchUnits	Yes	Unit system	metric
+Hotel Data
+GET /v1/hotels/data
+
+Get basic hotel information by hotel_id.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Hotel Photos
+GET /v1/hotels/photos
+
+Get all photos of a hotel.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Hotel Review Scores
+GET /v1/hotels/review-scores
+
+Get review scores and ratings breakdown.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Hotel Location Highlights
+GET /v1/hotels/location-highlights
+
+Get nearby transportation and landmarks (metro, rail, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Hotel Description
+GET /v1/hotels/description
+
+Get full hotel description.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Hotel Questions
+GET /v1/hotels/questions
+
+Get Q&A between guests and hotel staff.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Payment Features
+GET /v1/hotels/payment-features
+
+Get accepted payment methods and features.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Policies
+GET /v1/hotels/policies
+
+Get hotel policies (check-in/out times, cancellation, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Facilities
+GET /v1/hotels/facilities
+
+Get hotel amenities (Restaurant, Room service, Breakfast, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Map Markers
+GET /v1/hotels/map-markers
+
+Get geographic coordinates and nearby landmarks.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Nearby Places
+GET /v1/hotels/nearby-places
+
+Get nearby points of interest (airports, shopping centers, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Children Policy
+GET /v1/hotels/children-policies
+
+Get policies regarding children.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+children_age	integer	No	Child age to check	5
+Hotel Reviews
+GET /v1/hotels/reviews
+
+Get guest reviews with filtering and sorting options.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+sort_type	HotelsReviewsSortType	Yes	Sort order	SORT_MOST_RELEVANT
+page_number	integer	No	Page number	0
+customer_type	string	No	Filter by traveler type	solo_traveller
+language_filter	string	No	Filter by review language	en-gb,de,fr
+Hotel Tips
+GET /v1/hotels/tips
+
+Get guest tips and recommendations.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+sort_type	HotelsReviewsSortType	Yes	Sort order	SORT_MOST_RELEVANT
+page_number	integer	No	Page number	0
+customer_type	string	No	Filter by traveler type	solo_traveller
+language_filter	string	No	Filter by review language	en-gb,de,fr
+Hotel Reviews Metadata
+GET /v1/hotels/reviews-filter-metadata
+
+Get metadata for review filtering (available languages, traveler types, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1676161
+Hotel Room List
+GET /v1/hotels/room-list
+
+Get available rooms with prices, photos, and descriptions.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+currency	Currency	Yes	Currency	USD
+units	HotelsSearchUnits	Yes	Unit system	metric
+hotel_id	integer	Yes	Hotel ID	1676161
+checkin_date	string	Yes	Check-in date	2027-01-11
+checkout_date	string	Yes	Check-out date	2027-01-12
+adults_number_by_rooms	string	Yes	Adults per room (comma-separated)	3,1
+children_number_by_rooms	string	No	Children per room (comma-separated)	2,1
+children_ages	string	No	Ages of all children	5,0,9
+Nearby Cities
+GET /v1/hotels/nearby-cities
+
+Get cities near specified coordinates.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+latitude	number	Yes	Latitude	65.9667
+longitude	number	Yes	Longitude	-18.5333
+Search Hotels by Coordinates
+GET /v1/hotels/search-by-coordinates
+
+Find hotels near specific coordinates (latitude/longitude).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+latitude	number	Yes	Latitude	65.9667
+longitude	number	Yes	Longitude	-18.5333
+checkin_date	string	Yes	Check-in date	2027-01-11
+checkout_date	string	Yes	Check-out date	2027-01-12
+room_number	integer	Yes	Number of rooms	1
+adults_number	integer	Yes	Number of adults	2
+filter_by_currency	Currency	Yes	Currency	USD
+order_by	HotelsSearchOrderBy	Yes	Sort order	popularity
+units	HotelsSearchUnits	Yes	Unit system	metric
+children_number	integer	No	Number of children	2
+children_ages	string	No	Ages of children	5,0
+page_number	integer	No	Page number	0
+categories_filter_ids	string	No	Filter IDs	class::2,class::4
+include_adjacency	boolean	No	Include nearby locations	true
+Hotels Endpoints (v2)
+Version 2 endpoints provide enhanced functionality.
+
+Search Filters (v2)
+GET /v2/hotels/search-filters
+
+Enhanced search filters with price range support.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+dest_type	DestType	Yes	Destination type	city
+dest_id	integer	Yes	Destination ID	-553173
+checkin_date	string	Yes	Check-in date	2027-01-11
+checkout_date	string	Yes	Check-out date	2027-01-12
+room_number	integer	Yes	Number of rooms	1
+adults_number	integer	Yes	Number of adults	2
+filter_by_currency	Currency	Yes	Currency	USD
+order_by	HotelsSearchOrderBy	Yes	Sort order	popularity
+units	HotelsSearchUnits	Yes	Unit system	metric
+categories_filter_ids	string	No	Filters including price ranges	price::USD-140-190
+Price Filter Formats:
+
+Range: price::USD-140-190
+Minimum: price::USD-150-min
+Maximum: price::USD-150-max
+Hotels Search (v2)
+GET /v2/hotels/search
+
+Enhanced hotel search with additional filtering options.
+
+Same parameters as v1, with enhanced categories_filter_ids supporting price ranges.
+
+Hotels Details (v2)
+GET /v2/hotels/details
+
+Get comprehensive hotel details.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+currency	Currency	Yes	Currency	USD
+hotel_id	integer	Yes	Hotel ID	1676161
+checkin_date	string	Yes	Check-in date	2027-01-11
+checkout_date	string	Yes	Check-out date	2027-01-12
+Hotel Description (v2)
+GET /v2/hotels/description
+
+Get hotel description.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+hotel_id	integer	Yes	Hotel ID	1377073
+Meta Properties
+GET /v2/hotels/meta-properties
+
+Get meta properties description for SEO and display purposes.
+
+Car Rental Endpoints
+Search Car Locations
+GET /v1/car-rental/locations
+
+Search car rental pickup/dropoff locations by name.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+name	string	Yes	Location name	Berlin
+Search Car Rental
+GET /v1/car-rental/search
+
+Search available rental cars.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+currency	Currency	Yes	Currency	USD
+sort_by	CarsSortBy	Yes	Sort order	recommended
+from_country	CarsCor	Yes	Country code	de
+pick_up_datetime	string	Yes	Pickup date/time	2027-01-12 09:00:00
+drop_off_datetime	string	Yes	Dropoff date/time	2027-01-13 09:00:00
+pick_up_latitude	number	Yes	Pickup latitude	50.08773
+pick_up_longitude	number	Yes	Pickup longitude	14.421133
+drop_off_latitude	number	Yes	Dropoff latitude	50.08773
+drop_off_longitude	number	Yes	Dropoff longitude	14.421133
+Car Rental Details
+GET /v1/car-rental/detail
+
+Get details for a specific vehicle.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+currency	Currency	Yes	Currency	USD
+from_country	CarsCor	Yes	Country code	de
+vehicle_id	integer	Yes	Vehicle ID from search	699544941
+search_key	string	Yes	Search key from search results	(encoded string)
+Rental Terms
+GET /v1/car-rental/terms-conditions
+
+Get rental terms and conditions.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+from_country	CarsCor	Yes	Country code	de
+pick_up_location_id	integer	Yes	Pickup location ID	4516789
+Important Information
+GET /v1/car-rental/important-info
+
+Get important vehicle information.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+from_country	CarsCor	Yes	Country code	de
+vehicle_id	integer	Yes	Vehicle ID	663317713
+driver_age	integer	Yes	Driver age	30
+pick_up_location_id	integer	Yes	Pickup location ID	4123205
+drop_off_location_id	integer	Yes	Dropoff location ID	4123205
+pick_up_datetime	string	Yes	Pickup date/time	2027-01-11 09:00:00
+drop_off_datetime	string	Yes	Dropoff date/time	2027-01-12 09:00:00
+Rental Extras
+GET /v1/car-rental/extras
+
+Get additional services (insurance, GPS, etc.).
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+from_country	CarsCor	Yes	Country code	de
+currency	Currency	Yes	Currency	USD
+vehicle_id	integer	Yes	Vehicle ID	663317713
+price	number	Yes	Base price	2860.87
+driver_age	integer	Yes	Driver age	30
+pick_up_datetime	string	Yes	Pickup date/time	2027-01-11 09:00:00
+drop_off_datetime	string	Yes	Dropoff date/time	2027-01-12 09:00:00
+Vehicle Supplier Details
+GET /v1/car-rental/supplier/details
+
+Get rental company details.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+from_country	CarsCor	Yes	Country code	de
+vehicle_id	integer	Yes	Vehicle ID	699544941
+Supplier Reviews
+GET /v1/car-rental/supplier/reviews
+
+Get reviews for rental suppliers.
+
+Parameter	Type	Required	Description	Example
+locale	Locale	Yes	Language locale	en-gb
+from_country	CarsCor	Yes	Country code	de
+location_id	integer	Yes	Location ID	4123205
+Static Data Endpoints
+These endpoints provide reference data for filtering and display.
+
+Cities List
+GET /v1/static/cities
+
+Parameter	Type	Required	Description	Example
+name	string	No	City name	Paris
+city_id	integer	No	City ID	
+country	string	No	Country code	fr
+latitude	string	No	Latitude	
+longitude	string	No	Longitude	
+page	integer	No	Page number	0
+Countries List
+GET /v1/static/country
+
+Parameter	Type	Required	Description	Example
+country	string	No	Country code	us
+Hotel Chains
+GET /v1/static/chain-types
+
+Parameter	Type	Required	Description	Example
+chain_id	string	No	Chain ID	
+name	string	No	Chain name	Hilton
+Districts
+GET /v1/static/districts
+
+Parameter	Type	Required	Description	Example
+name	string	No	District name	
+city_id	string	No	City ID	
+district_id	string	No	District ID	
+country	string	No	Country code	
+page	integer	No	Page number	0
+Facility Types
+GET /v1/static/facility-types
+
+Parameter	Type	Required	Description	Example
+facility_id	integer	No	Facility ID	
+Hotel Facility Types
+GET /v1/static/hotel-facility-types
+
+Parameter	Type	Required	Description	Example
+facility_type_id	string	No	Facility type ID	
+hotel_facility_type_id	string	No	Hotel facility type ID	
+Hotel Types
+GET /v1/static/hotel-types
+
+Parameter	Type	Required	Description	Example
+hotel_type_id	string	No	Hotel type ID	
+Payment Types
+GET /v1/static/payment-types
+
+Parameter	Type	Required	Description	Example
+payment_id	string	No	Payment ID	
+Regions
+GET /v1/static/regions
+
+Parameter	Type	Required	Description	Example
+name	string	No	Region name	
+country	string	No	Country code	
+region_id	string	No	Region ID	
+region_type	string	No	Region type	
+page	integer	No	Page number	0
+Hotels List
+GET /v1/static/hotels
+
+Parameter	Type	Required	Description	Example
+name	string	No	Hotel name	
+slug	string	No	URL slug	ad/plaza
+hotel_id	integer	No	Hotel ID	
+city_id	integer	No	City ID	
+country	string	No	Country code	
+region_id	integer	No	Region ID	
+district_id	integer	No	District ID	
+hotel_type_id	integer	No	Hotel type ID	
+zip_code	string	No	ZIP code	
+exact_class	integer	No	Star rating	
+page	integer	No	Page number	0
+Room Facility Types
+GET /v1/static/room-facility-types
+
+Parameter	Type	Required	Description	Example
+room_facility_type_id	string	No	Room facility type ID	
+facility_type_id	string	No	Facility type ID	
+Room Types
+GET /v1/static/room-types
+
+Parameter	Type	Required	Description	Example
+room_type_id	string	No	Room type ID	
+Enumerations & Schemas
+Locale
+Supported language locales:
+
+Value	Language
+en-gb	English (UK)
+en-us	English (US)
+de	German
+nl	Dutch
+fr	French
+es	Spanish
+es-ar	Spanish (Argentina)
+es-mx	Spanish (Mexico)
+ca	Catalan
+it	Italian
+pt-pt	Portuguese (Portugal)
+pt-br	Portuguese (Brazil)
+no	Norwegian
+fi	Finnish
+sv	Swedish
+da	Danish
+cs	Czech
+hu	Hungarian
+ro	Romanian
+ja	Japanese
+zh-cn	Chinese (Simplified)
+zh-tw	Chinese (Traditional)
+pl	Polish
+el	Greek
+ru	Russian
+tr	Turkish
+bg	Bulgarian
+ar	Arabic
+ko	Korean
+he	Hebrew
+lv	Latvian
+uk	Ukrainian
+id	Indonesian
+ms	Malay
+th	Thai
+et	Estonian
+hr	Croatian
+lt	Lithuanian
+sk	Slovak
+sr	Serbian
+sl	Slovenian
+vi	Vietnamese
+tl	Filipino
+is	Icelandic
+Currency
+Supported currency codes:
+
+AED, AFN, ALL, AMD, ANG, AOA, ARS, AUD, AWG, AZN, BAM, BBD, BDT, BGN, BHD, BIF, BMD, BND, BOB, BRL, BSD, BTN, BWP, BYN, BYR, BZD, CAD, CDF, CHF, CLP, CNY, COP, CRC, CUP, CVE, CYP, CZK, DJF, DKK, DOP, DZD, EEK, EUR, EGP, ETB, FJD, GBP, GEL, GHS, GMD, GNF, GRD, GTQ, GYD, HKD, HNL, HRK, HTG, HUF, IDR, ILS, INR, IQD, IRR, ISK, JMD, JOD, JPY, KES, KGS, KHR, KMF, KRW, KWD, KYD, KZT, LAK, LBP, LKR, LRD, LSL, LTL, LVL, LYD, MAD, MDL, MGA, MKD, MMK, MNT, MOP, MRO, MTL, MUR, MVR, MWK, MXN, MYR, MZN, NAD, NGN, NIO, NOK, NPR, NZD, OMR, PAB, PEN, PGK, PHP, PKR, PLN, PYG, QAR, ROL, RON, RSD, RUB, RWF, SAR, SBD, SCR, SDG, SEK, SGD, SIT, SKK, SLL, SOS, SRD, STD, SVC, SYP, SZL, THB, TJS, TMM, TND, TOP, TRY, TTD, TWD, TZS, UAH, UGX, USD, UYU, UZS, VEB, VEF, VES, VND, VUV, WST, XAF, XCD, XOF, XPF, YER, ZAR, ZMK, ZMW
+
+DestType (Destination Type)
+Value	Description
+city	City
+region	Region/State
+landmark	Landmark
+district	District/Neighborhood
+hotel	Specific hotel
+country	Country
+airport	Airport
+latlong	GPS coordinates
+HotelsSearchOrderBy (Sort Options)
+Value	Description
+popularity	Most popular first
+class_ascending	Star rating (low to high)
+class_descending	Star rating (high to low)
+distance	Distance from center
+upsort_bh	Booking recommendation
+review_score	Guest rating
+price	Price (low to high)
+HotelsSearchUnits
+Value	Description
+metric	Kilometers
+imperial	Miles
+HotelsReviewsSortType
+Value	Description
+SORT_MOST_RELEVANT	Most relevant reviews
+SORT_RECENT_DESC	Newest first
+SORT_RECENT_ASC	Oldest first
+SORT_SCORE_DESC	Highest score first
+SORT_SCORE_ASC	Lowest score first
+CarsSortBy
+Value	Description
+recommended	Recommended cars
+price_low_to_high	Price (low to high)
+CarsCor (Car Rental Countries)
+Supported country codes for car rental:
+
+it, de, nl, fr, es, ca, no, fi, sv, da, cs, hu, ro, ja, pl, el, ru, tr, bg, ar, ko, he, lv, uk, id, ms, th, et, hr, lt, sk, sr, sl, vi, tl
+
+Customer Type (Reviews)
+Filter reviews by traveler type:
+
+total - All reviews
+solo_traveller - Solo travelers
+young_couple - Young couples
+mature_couple - Mature couples
+family_with_young_children - Families with young children
+family_with_older_children - Families with older children
+with_friends - Friends traveling together
+group - Groups
+review_category_couples - All couples
+review_category_families - All families
+review_category_group_of_friends - Groups of friends
+Charge Types
+CITYTAX - City/tourist tax
+SERVICECHARGE - Service charge
+VAT - Value added tax
+Facility Fee Types
+Types of facilities that may have additional fees:
+
+SPA, SAUNA, HOTTUB, FITNESSCENTER, BICYCLERENTAL, MASSAGE, TENNISCOURT, LAUNDRY, VALETPARKING, SOLARIUM, TURKISHSTEAMBATH, PRIVATECHEF, HOTSPRINGBATH, LOCKERSAFE, EXCURSION, BBQFACILITIES, IRONING, UMBRELLA, WATERPARK, GOLFCOURSE, SUNBED, HIKING, BEAUTYSALON, DIVING, POOL, PRIVATEBEACHAREA, HIGHCHAIR, CARRENTAL, BABYSITTING
+
